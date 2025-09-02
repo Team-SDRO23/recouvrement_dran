@@ -14,6 +14,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
+import shutil
 
 
 
@@ -43,9 +44,9 @@ with app.app_context():
 # ----------- Page d'accueil -----------
 @app.route('/')
 def home():
-    if 'user_id' in session:
-        return redirect(url_for('upload_liste_impaye'))
-    return redirect(url_for('login'))
+
+    return redirect(url_for('upload_liste_impaye'))
+  
 # ----------- Enregistrement -----------
 @app.route('/register', methods=['GET','POST'])
 def register():
@@ -132,8 +133,6 @@ def find_header_row(df0, required_labels=None, min_match=3):
 
 @app.route('/upload_liste_impaye', methods=['GET','POST'])
 def upload_liste_impaye():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
 
     preview_html = None
     orig_filename = None
@@ -216,8 +215,6 @@ def upload_liste_impaye():
 
 @app.route('/upload_liste_payement', methods=['GET','POST'])
 def upload_liste_payement():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
 
     data_preview_html = None
     uploaded_names = []
@@ -247,7 +244,7 @@ def upload_liste_payement():
                                    added_rows=0, duplicates_removed=0)
 
         try:
-            required = {'Statut Branchement', 'Date statut', 'Genre client', 'Type branchement'}
+            required = {'RefContrat', 'DateCreation', 'DateReglement', 'Secteurs'}
             raw = file.read()
 
        
@@ -332,6 +329,14 @@ def upload_liste_payement():
 
             payment_folder = app.config['PAYMENT_FOLDER']
             os.makedirs(payment_folder, exist_ok=True)
+            # Vider le dossier avant d'enregistrer le nouveau fichier
+            for f in os.listdir(payment_folder):
+                fp = os.path.join(payment_folder, f)
+                if os.path.isfile(fp) or os.path.islink(fp):
+                    os.remove(fp)
+                elif os.path.isdir(fp):
+                    shutil.rmtree(fp)
+
             save_path = os.path.join(payment_folder, filename)
 
             if saver == 'excel':
@@ -473,8 +478,6 @@ def _compute_retablissemements(app):
 
 @app.route('/retablissements', methods=['GET'])
 def retablissements():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
 
     try:
         display, stats = _compute_retablissemements(app)

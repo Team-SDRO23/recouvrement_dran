@@ -62,7 +62,7 @@
       </button>
       <div id="nav" class="collapse navbar-collapse">
         <ul class="navbar-nav ms-auto">
-          {% if session.get('user_id') %}
+         
    <li class="nav-item">
   <a class="nav-link {% if request.endpoint and request.endpoint.endswith('upload_liste_impaye') %}active{% endif %}"
      href="{{ url_for('upload_liste_impaye') }}">
@@ -84,11 +84,7 @@
   </a>
 </li>
 
-          <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}">Exit</a></li>
-          {% else %}
-          <li class="nav-item"><a class="nav-link" href="{{ url_for('login') }}">Connexion</a></li>
-          <li class="nav-item"><a class="nav-link" href="{{ url_for('register') }}">Inscription</a></li>
-          {% endif %}
+
         </ul>
       </div>
     </div>
