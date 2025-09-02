@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block title %}Concaténation — Payementfacture{% endblock %}
+
+{% block content %}
+</br>
+</br></br></br>
+<div class="row g-4">
+  <div class="col-12 col-lg-10 mx-auto">
+    <div class="card">
+      <div class="card-body p-4 p-lg-5">
+        <div class="d-flex align-items-center mb-3">
+          <div class="me-3 rounded-circle d-inline-flex align-items-center justify-content-center"
+               style="width:40px;height:40px;background:rgba(17,140,79,.12);">
+            ➕
+          </div>
+          <div>
+            <h1 class="h4 mb-0">Ajout des fichiers de paiement de facture </h1>
+          
+          </div>
+        </div>
+
+        <form method="POST" enctype="multipart/form-data" onsubmit="showSpinnerConcat(this)">
+          <div class="mb-3">
+            <label class="form-label">Fichiers Excel à ajouter (.xlsx / .xls)</label>
+            <input class="form-control" type="file" name="files" accept=".xlsx,.xls" multiple required
+                   onchange="updateFileName(this,'concatName')">
+       
+          </div>
+
+          <div class="d-flex align-items-center">
+            <button type="submit" class="btn btn-orange me-3" id="concatBtn">
+              Ajouter
+            </button>
+            <span id="concatName" class="text-muted"></span>
+          </div>
+        </form>
+
+        {% if data_preview_html %}
+          <hr class="my-4">
+          <div class="card">
+            <div class="card-body">
+             
+              <p class="text-muted mb-3">
+              
+                {% if added_rows is not none %}<br>Ajout : <strong>{{ added_rows }}</strong> ligne(s).{% endif %}
+              </p>
+              <div class="table-responsive">
+                {{ data_preview_html | safe }}
+              </div>
+              {% if uploaded_names %}
+                <div class="small text-muted mt-2">
+                  Fichiers importés : {{ ", ".join(uploaded_names) }}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+
+        <hr class="my-4">
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function updateFileName(input, targetId){
+    const t = document.getElementById(targetId);
+    if(!t) return;
+    const files = Array.from(input.files || []);
+    if(files.length === 0){ t.textContent=''; return; }
+    const names = files.map(f => f.name).join(', ');
+    t.textContent = files.length + ' fichier(s) sélectionné(s) : ' + names;
+  }
+  function showSpinnerConcat(form){
+    const btn = document.getElementById('concatBtn');
+    if(btn){
+      btn.disabled = true;
+      btn.innerHTML = 'Concaténation…';
+    }
+  }
+</script>
+{% endblock %}

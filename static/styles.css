@@ -1,0 +1,131 @@
+
+
+
+
+body {
+    font-family: Arial, sans-serif;
+    background: white;
+    color: #333;
+
+}
+nav {
+    background: orange;
+    padding: 10px;
+}
+nav a {
+    color: white;
+    margin: 0 10px;
+    text-decoration: none;
+}
+button {
+    background: green;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    margin-top: 10px;
+}
+.container {
+    width: 60%;
+    margin: auto;
+    padding: 20px;
+}
+.flash li {
+    color: red;
+}
+
+/* === HERO animé (orange -> vert) === */
+.auth-hero{
+  min-height: 85vh;
+  padding: 24px;
+  background: linear-gradient(120deg, #ff8c00, #118c4f);
+  background-size: 200% 200%;
+  animation: heroShift 10s ease infinite;
+}
+@keyframes heroShift {
+  0%{ background-position: 0% 50%; }
+  50%{ background-position: 100% 50%; }
+  100%{ background-position: 0% 50%; }
+}
+
+/* === Carte verre + bordure fluide === */
+.glass-card{
+  width: 100%;
+  max-width: 460px;
+  border-radius: 22px;
+  position: relative;
+  color: #fff;
+  backdrop-filter: blur(14px);
+  background: rgba(255,255,255,0.12);
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.25);
+  box-shadow: 0 12px 40px rgba(0,0,0,.2);
+}
+.glass-card::before{
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 26px;
+  padding: 2px;
+  background: conic-gradient(from 140deg, #ffb24d, #19a563, #ff8c00, #118c4f, #ffb24d);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: spin 6s linear infinite;
+  opacity: .75;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* === Petit logo/emoji === */
+.logo-dot{
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.2);
+  border: 1px solid rgba(255,255,255,.35);
+  backdrop-filter: blur(8px);
+}
+
+/* === Inputs verre + labels flottants === */
+.glass-input{
+  background: rgba(255,255,255,0.85) !important;
+  border: none !important;
+  border-radius: 12px !important;
+  padding-left: 44px !important; /* espace pour l'icône */
+  box-shadow: 0 4px 18px rgba(17,140,79,.15);
+}
+.glass-input:focus{
+  box-shadow: 0 0 0 .25rem rgba(17,140,79,.25), 0 6px 24px rgba(17,140,79,.25) !important;
+}
+.icon-group{ position: relative; }
+.field-icon{
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  font-size: 18px; opacity: .8;
+}
+
+/* === Bouton CTA dégradé === */
+.btn-cta{
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(90deg, #ff8c00, #118c4f);
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: .2px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  transition: transform .15s ease, filter .2s ease, box-shadow .2s ease;
+}
+.btn-cta:hover{ filter: brightness(1.05); transform: translateY(-1px); }
+.btn-cta:active{ transform: translateY(0); }
+
+/* === Bouton œil === */
+.toggle-eye{
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: transparent; border: none; font-size: 18px; line-height: 1;
+  opacity: .8; cursor: pointer;
+}
+.toggle-eye:hover{ opacity: 1; }
+
+/* === Accessoires === */
+.form-floating > label { color: #2b2b2b; }
+.text-white-50 { color: rgba(255,255,255,.75) !important; }
+
+
+

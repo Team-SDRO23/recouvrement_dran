@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}Inscription{% endblock %}
+{% block content %}
+
+<style>
+  /* Carte inscription */
+  .register-card {
+    position: relative;
+    backdrop-filter: blur(12px);
+    background: rgba(255,255,255,0.2);
+    border: none;
+    border-radius: 20px;
+    width: 100%;
+    max-width: 400px;
+    color: #fff;
+  }
+
+  /* Champs input avec contraste */
+  .custom-input {
+    border-radius: 50px;
+    padding: 12px;
+    background: rgba(240,240,240,0.9); /* gris clair */
+    border: 1px solid #ddd;
+  }
+
+  .custom-input:focus {
+    outline: none;
+    border: 2px solid orange;
+    box-shadow: 0 0 8px rgba(255,140,0,0.6);
+    background: #fff;
+  }
+</style>
+
+</br>
+<div class="d-flex justify-content-center align-items-center" style="min-height: 80vh;">
+  <div class="card shadow-lg p-4 register-card">
+
+    <!-- En-tête stylisée énergie -->
+    <div class="text-center mb-2">
+      <span class="rounded-pill px-3 py-1"
+            style="display:inline-block;
+                   background: rgba(255,255,255,0.9);
+                   color:#1f2937;
+                   font-weight:600;
+                   letter-spacing:.2px;">
+        ⚡ Page d’inscription
+      </span>
+    </div>
+
+    <form method="POST">
+      <div class="mb-3">
+        <label for="username" class="form-label" style="color:#252222;">Email</label>
+        <input id="username" type="text" name="username" 
+               class="form-control form-control-lg custom-input"
+               placeholder="ex:user@cie.ci"
+               autocomplete="username">
+      </div>
+
+      <div class="mb-3">
+        <label for="password" class="form-label" style="color:#252222;">Mot de passe</label>
+        <input id="password" type="password" name="password" 
+               class="form-control form-control-lg custom-input"
+               placeholder="ex:DXyjgdff_@+"
+               autocomplete="new-password">
+      </div>
+
+      <button type="submit" class="btn w-100 py-2"
+              style="border-radius: 50px;
+                     background: linear-gradient(90deg, orange, green);
+                     color: white;
+                     font-weight: bold;">
+        ⚡ S'inscrire
+      </button>
+    </form>
+
+    <p class="text-center mt-3" style="color:#ffd700; ">
+      Déjà inscrit ?
+      <a href="{{ url_for('login') }}" style="color:#ffd700; text-decoration: underline;">Connectez-vous</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

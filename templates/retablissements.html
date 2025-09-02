@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}Clients à rétablir{% endblock %}
+
+{% block content %}
+</br></br>
+<div class="container py-4">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h1 class="h5 mb-0">Clients éligibles</h1>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('download_retab_excel') }}" class="btn btn-sm btn-success">📥 Excel</a>
+      <a href="{{ url_for('download_retab_pdf') }}" class="btn btn-sm btn-danger">📥 PDF</a>
+    </div>
+  </div>
+
+  {% if stats %}
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Clients total</div>
+          <div class="fs-5 fw-semibold"> {{ "{:,}".format(stats.nb_clients_total) }}  </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Éligibles</div>
+          <div class="fs-5 fw-semibold">{{ stats.nb_eligibles_total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Total payés</div>
+          <div class="fs-5 fw-semibold">{{ "{:,}".format(stats.total_payes_total) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body text-center">
+          <div class="text-muted small">Reste à payer</div>
+          <div class="fs-5 fw-semibold">{{ "{:,}".format(stats.reste_total) }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if table_html %}
+    <div class="table-responsive">
+      {{ table_html | safe }}
+    </div>
+  {% else %}
+    <div class="alert alert-info">Aucune donnée à afficher.</div>
+  {% endif %}
+</div>
+
+<!-- Alignement à gauche -->
+<style>
+  #table-retab th, #table-retab td { text-align: left !important; vertical-align: middle; }
+  .dataTables_wrapper .dataTables_paginate .paginate_button { padding: .25rem .5rem; }
+</style>
+
+<!-- DataTables (Bootstrap 5) -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
+<script>
+  $(function () {
+    $('#table-retab').DataTable({
+      pageLength: 10,
+      lengthChange: false,
+      ordering: true,
+      searching: true,
+      language: { url: "//cdn.datatables.net/plug-ins/1.13.6/i18n/fr-FR.json" }
+    });
+  });
+</script>
+{% endblock %}
