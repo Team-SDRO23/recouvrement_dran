@@ -362,11 +362,7 @@ def upload_liste_payement():
                            added_rows=0,
                            duplicates_removed=0)
 
-
-
 def _compute_retablissemements(app):
-    import os
-    import pandas as pd
 
     payment_folder = app.config['PAYMENT_FOLDER']
     if not os.path.isdir(payment_folder):
@@ -376,53 +372,23 @@ def _compute_retablissemements(app):
     if pay.empty:
         raise ValueError("Aucun fichier de paiements (csv/xlsx) trouvé dans le dossier.")
 
-    # --- Dates
-    if 'DateCreation' in pay.columns:
-        pay['DateCreation_dt'] = pd.to_datetime(pay['DateCreation'], errors='coerce', dayfirst=True)
+    # --- Normalisation clés paiements
+    if 'RefContrat' in pay.columns:
+        pay['RefContrat'] = pay['RefContrat'].astype(str).str.strip()
     else:
-        pay['DateCreation_dt'] = pd.NaT
-
-    # Nettoyage minimal des références (utile pour les comparaisons)
-    for col in ['RefContrat', 'RefFacture']:
-        if col in pay.columns:
-            pay[col] = pay[col].astype(str).str.strip()
-        else:
-            pay[col] = pd.NA
-
-    # --- Trouver, par contrat, la facture la plus récente (selon DateCreation_dt)
-    pay_clean = pay.dropna(subset=['DateCreation_dt']).copy()
-
-    # Optionnel : départage si égalité de date -> on prend la plus grande RefFacture
-    # (retirer le sort sur RefFacture si non souhaité)
-    pay_clean = pay_clean.sort_values(['RefContrat', 'DateCreation_dt', 'RefFacture'])
-
-    # idxmax sur la date -> récupère la ligne "la plus récente" par RefContrat
-    idx = pay_clean.groupby('RefContrat', dropna=False)['DateCreation_dt'].idxmax()
-
-    latest_facture_par_contrat = (
-        pay_clean.loc[idx, ['RefContrat', 'RefFacture']]
-                 .rename(columns={'RefFacture': 'LastRefFacture'})
-                 .dropna(subset=['RefContrat'])
-    )
-
-    # --- Garder toutes les lignes de la facture la plus récente par contrat
-    pay2 = (
-        pay.merge(latest_facture_par_contrat, on='RefContrat', how='inner')
-           .loc[lambda df: df['RefFacture'] == df['LastRefFacture']]
-           .copy()
-    )
+        pay['RefContrat'] = pd.NA
 
     # --- Montants payés
-    if 'MontantReglement' not in pay2.columns:
-        pay2['MontantReglement'] = '0'
+    if 'MontantReglement' not in pay.columns:
+        pay['MontantReglement'] = '0'
 
-    pay2['MontantReglement_num'] = (
-        pay2['MontantReglement'].apply(_to_number_cfa).fillna(0)
-    )
+    pay['MontantReglement_num'] = pay['MontantReglement'].apply(_to_number_cfa).fillna(0)
 
-    agg = (
-        pay2.groupby(['RefContrat', 'RefFacture'], as_index=False, dropna=False)
-            .agg(TotalPayes=('MontantReglement_num', 'sum'))
+    # >>> Somme des paiements PAR CONTRAT (plus de filtre "dernière facture")
+    pay_agg = (
+        pay.groupby('RefContrat', dropna=False, as_index=False)
+           .agg(TotalPayes=('MontantReglement_num', 'sum'))
+           .dropna(subset=['RefContrat'])
     )
 
     # --- Charger impayés
@@ -432,39 +398,49 @@ def _compute_retablissemements(app):
 
     imp = _load_impayes(imp_path)
 
-    want_cols = ['RefContrat', 'Telephone_prive', 'Telephone_pro','Solde Total factures échues', 'ctr']
+    want_cols = ['RefContrat', 'Telephone_prive', 'Telephone_pro', 'Solde Total factures échues', 'ctr']
     for c in want_cols:
         if c not in imp.columns:
             imp[c] = pd.NA
 
-    # Nettoyage des clés de jointure côté impayés
+    # Nettoyage clés & téléphones
     imp['RefContrat'] = imp['RefContrat'].astype(str).str.strip()
-
     imp['Solde_num'] = imp['Solde Total factures échues'].apply(_to_number_cfa).fillna(0)
-    imp['Telephone_prive'] = imp['Telephone_prive'].apply(normalize_phone_ci)
-    imp['Telephone_pro'] = imp['Telephone_pro'].apply(normalize_phone_ci)
-    imp['Telephone_prive'] = (
-        imp['Telephone_prive'].fillna('') +
-        imp['Telephone_pro'].fillna('').apply(lambda x: f"<br>{x}" if x else '')
+
+    # On agrège l'éventuelle multiplicité d'enregistrements impayés par contrat
+    imp_agg = (
+        imp.groupby('RefContrat', dropna=False, as_index=False)
+           .agg({
+               'Solde_num': 'sum',
+               'Solde Total factures échues': 'first',
+               'ctr': 'first',
+               'Telephone_prive': 'first',
+               'Telephone_pro': 'first',
+           })
     )
 
-    # --- Fusion totaux payés vs soldes
-    out_all = agg.merge(imp[want_cols + ['Solde_num']], on='RefContrat', how='left')
+    # Normalisation téléphones (après agrégation)
+    imp_agg['Telephone_prive'] = imp_agg['Telephone_prive'].apply(normalize_phone_ci)
+    imp_agg['Telephone_pro'] = imp_agg['Telephone_pro'].apply(normalize_phone_ci)
+    imp_agg['Telephone_prive'] = (
+        imp_agg['Telephone_prive'].fillna('') +
+        imp_agg['Telephone_pro'].fillna('').apply(lambda x: f"<br>{x}" if x else '')
+    )
 
-   
+    # --- Fusion totaux payés vs soldes (par RefContrat uniquement)
+    out_all = pay_agg.merge(
+        imp_agg[['RefContrat', 'Solde_num', 'Solde Total factures échues', 'ctr', 'Telephone_prive']],
+        on='RefContrat',
+        how='left'
+    )
+
+    # Reste à payer (peut être négatif ou nul => éligible)
     out_all['Reste'] = (out_all['Solde_num'] - out_all['TotalPayes'])
-
 
     # --- Statistiques globales
     nb_clients_total = (
-    pay['RefContrat']
-    .astype(str)         
-    .str.strip()         
-    .replace('', pd.NA)   
-    .dropna()
-    .nunique()          
-)
-
+        pay['RefContrat'].astype(str).str.strip().replace('', pd.NA).dropna().nunique()
+    )
     nb_eligibles_total = (out_all['Reste'] <= 0).fillna(False).sum()
 
     stats = {
@@ -487,7 +463,6 @@ def _compute_retablissemements(app):
         'ctr': 'num_compteur',
         'Solde Total factures échues': 'solde_total_facture',
         'Telephone_prive': 'telephone'
-     
     }, inplace=True)
 
     display = display[['numero_client', 'num_compteur', 'solde_total_facture', 'telephone']]
