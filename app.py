@@ -425,8 +425,7 @@ def retablissements():
 
 @app.route('/retablissements/download_excel', methods=['GET'])
 def download_retab_excel():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
+
     try:
         display, _ = _compute_retablissemements(app)
         out_file = os.path.join(app.config['UPLOAD_FOLDER'], "retablissements.xlsx")
@@ -439,8 +438,7 @@ def download_retab_excel():
 
 @app.route('/retablissements/download_pdf', methods=['GET'])
 def download_retab_pdf():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
+   
     try:
         display, _ = _compute_retablissemements(app)
 
