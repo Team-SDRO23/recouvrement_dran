@@ -9,7 +9,8 @@ import pandas as pd
 from flask_sqlalchemy import SQLAlchemy
 from pathlib import Path
 from datetime import datetime
-from utils import _read_any_file,_to_number_cfa,_load_all_payments,_load_impayes,normalize_phone_ci
+
+from utils import _read_any_file,_to_number_cfa,_load_all_payments,_load_impayes,normalize_phone_ci,clean_num_compteur
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -47,49 +48,7 @@ def home():
 
     return redirect(url_for('upload_liste_impaye'))
   
-# ----------- Enregistrement -----------
-@app.route('/register', methods=['GET','POST'])
-def register():
-    if request.method == 'POST':
-        username = request.form['username'].strip()
-        password_raw = request.form['password']
 
-        if not username.endswith("@cie.ci"):
-            flash("Le nom d'utilisateur doit être une adresse se terminant par @cie.ci")
-            return render_template('register.html')
-     
-        if User.query.filter_by(username=username).first():
-            flash('Utilisateur déjà existant')
-            return render_template('register.html')
-
-        password = generate_password_hash(password_raw)
-        user = User(username=username, password=password)
-        db.session.add(user)
-        db.session.commit()
-        flash('Inscription réussie')
-        return redirect(url_for('login'))
-
-    return render_template('register.html')
-
-# ----------- Connexion -----------
-@app.route('/login', methods=['GET','POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password, password):
-            session['user_id'] = user.id
-            return redirect(url_for('upload_liste_impaye'))
-        else:
-            flash('Identifiants invalides')
-    return render_template('login.html')
-
-# ----------- Déconnexion -----------
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
 
 # ----------- Tableau de bord -----------
 @app.route('/dashboard')
@@ -151,17 +110,16 @@ def upload_liste_impaye():
         try:
             orig_filename = secure_filename(file.filename)
 
-            # 0) Lire le flux UNE SEULE FOIS
+
             raw = file.read()
             bio = BytesIO(raw)
 
-            # 1) Lecture SANS entête pour pouvoir détecter la vraie ligne d’en-têtes
+           
             if ext == 'csv':
                 df0 = pd.read_csv(bio, header=None, dtype=object)
             else:
                 df0 = pd.read_excel(bio, sheet_name=0, header=None, dtype=object)
 
-            # 2) Détection robuste de la ligne d’en-têtes
             required = [
                 'Matricule AZ', 'Nom AZ', 'Tournee','Genre client'
             ]
@@ -182,7 +140,7 @@ def upload_liste_impaye():
             if mask_bad.any():
                 df = df.iloc[:, ~mask_bad]
 
-            # 4c) drop colonnes & lignes totalement vides
+          
             df = df.dropna(axis=1, how='all')
             df = df.dropna(axis=0, how='all')
 
@@ -402,8 +360,11 @@ def _compute_retablissemements(app):
         raise FileNotFoundError("Fichier des impayés introuvable (factureimpaye.xlsx).")
 
     imp = _load_impayes(imp_path)
+    
+    imp = clean_num_compteur(imp)
 
-    want_cols = ['RefContrat', 'Telephone_prive', 'Telephone_pro', 'Solde Total factures échues', 'ctr']
+
+    want_cols = ['RefContrat', 'Telephone_prive', 'Telephone_pro', 'Solde Total factures échues', 'Num_compteur']
     for c in want_cols:
         if c not in imp.columns:
             imp[c] = pd.NA
@@ -416,9 +377,9 @@ def _compute_retablissemements(app):
     imp_agg = (
         imp.groupby('RefContrat', dropna=False, as_index=False)
            .agg({
-               'Solde_num': 'sum',
+               'Solde_num': 'first',
                'Solde Total factures échues': 'first',
-               'ctr': 'first',
+               'Num_compteur': 'first',
                'Telephone_prive': 'first',
                'Telephone_pro': 'first',
            })
@@ -434,7 +395,7 @@ def _compute_retablissemements(app):
 
     # --- Fusion totaux payés vs soldes (par RefContrat uniquement)
     out_all = pay_agg.merge(
-        imp_agg[['RefContrat', 'Solde_num', 'Solde Total factures échues', 'ctr', 'Telephone_prive']],
+        imp_agg[['RefContrat', 'Solde_num', 'Solde Total factures échues', 'Num_compteur', 'Telephone_prive']],
         on='RefContrat',
         how='left'
     )
@@ -460,17 +421,17 @@ def _compute_retablissemements(app):
     out = out_all[out_all['Reste'].fillna(1) <= 0].copy()
 
     # Affichage final (infos de contact + solde original)
-    display = out[['RefContrat', 'ctr', 'Solde Total factures échues', 'Telephone_prive']].copy()
+    display = out[['RefContrat', 'Num_compteur', 'Solde Total factures échues', 'Telephone_prive']].copy()
     display.sort_values(by=['RefContrat'], inplace=True, na_position='last')
 
     display.rename(columns={
         'RefContrat': 'numero_client',
-        'ctr': 'num_compteur',
+       
         'Solde Total factures échues': 'solde_total_facture',
         'Telephone_prive': 'telephone'
     }, inplace=True)
 
-    display = display[['numero_client', 'num_compteur', 'solde_total_facture', 'telephone']]
+    display = display[['numero_client', 'Num_compteur', 'solde_total_facture', 'telephone']]
 
     return display, stats
 

@@ -107,6 +107,9 @@ def _load_all_payments(folder: str) -> pd.DataFrame:
         if c in pay.columns:
             pay[c] = pay[c].astype(str)
     return pay
+import pandas as pd
+
+
 
 def _load_impayes(path: str) -> pd.DataFrame:
     imp = _read_any_file(path)
@@ -115,8 +118,10 @@ def _load_impayes(path: str) -> pd.DataFrame:
         imp.rename(columns={'Ref contrat': 'RefContrat'}, inplace=True)
     if 'Téléphone privé' in imp.columns and 'Telephone_prive' not in imp.columns:
         imp.rename(columns={'Téléphone privé': 'Telephone_prive'}, inplace=True)
-    if 'Téléphone professionnel' in imp.columns and 'Téléphone professionnel' not in imp.columns:
+    if 'Téléphone professionnel' in imp.columns and 'Telephone_pro' not in imp.columns:
         imp.rename(columns={'Téléphone professionnel': 'Telephone_pro'}, inplace=True)
+    if 'Numéro compteur' in imp.columns and 'Num_compteur' not in imp.columns:
+        imp.rename(columns={'Numéro compteur': 'Num_compteur'}, inplace=True)
     if 'Solde Total factures échues' not in imp.columns:
       
         for k in imp.columns:
@@ -125,3 +130,12 @@ def _load_impayes(path: str) -> pd.DataFrame:
                 break
     return imp
 
+def clean_num_compteur(df: pd.DataFrame) -> pd.DataFrame:
+
+    df = df.copy()
+    df['Num_compteur'] = df['Num_compteur'].astype(str).str.replace('nan', '')  # éviter les NaN en texte
+    
+    df['Num_compteur'] = df['Num_compteur'].apply(
+        lambda x: x.split('_', 1)[-1] if '_' in x else x
+    )
+    return df
