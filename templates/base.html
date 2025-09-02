@@ -85,6 +85,14 @@
 </li>
 
 
+<li class="nav-item">
+  <a class="nav-link {% if request.endpoint and request.endpoint.endswith('paiements_fichiers') %}active{% endif %}"
+     href="{{ url_for('paiements_fichiers') }}">
+    Fichiers_payement
+  </a>
+</li>
+
+
         </ul>
       </div>
     </div>

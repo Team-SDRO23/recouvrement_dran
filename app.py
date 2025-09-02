@@ -49,30 +49,6 @@ def home():
     return redirect(url_for('upload_liste_impaye'))
   
 
-
-# ----------- Tableau de bord -----------
-@app.route('/dashboard')
-def dashboard():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    users = User.query.all()
-    return render_template('dashboard.html', users=users)
-
-@app.route('/delete_user/<int:id>')
-def delete_user(id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    user = User.query.get(id)
-    db.session.delete(user)
-    db.session.commit()
-    return redirect(url_for('dashboard'))
-from io import BytesIO
-import os
-import numpy as np
-import pandas as pd
-from flask import request, session, redirect, url_for, render_template, flash
-from werkzeug.utils import secure_filename
-
 def find_header_row(df0, required_labels=None, min_match=3):
    
     if required_labels:
@@ -287,13 +263,6 @@ def upload_liste_payement():
 
             payment_folder = app.config['PAYMENT_FOLDER']
             os.makedirs(payment_folder, exist_ok=True)
-            # Vider le dossier avant d'enregistrer le nouveau fichier
-            for f in os.listdir(payment_folder):
-                fp = os.path.join(payment_folder, f)
-                if os.path.isfile(fp) or os.path.islink(fp):
-                    os.remove(fp)
-                elif os.path.isdir(fp):
-                    shutil.rmtree(fp)
 
             save_path = os.path.join(payment_folder, filename)
 
@@ -425,13 +394,12 @@ def _compute_retablissemements(app):
     display.sort_values(by=['RefContrat'], inplace=True, na_position='last')
 
     display.rename(columns={
-        'RefContrat': 'numero_client',
        
         'Solde Total factures échues': 'solde_total_facture',
         'Telephone_prive': 'telephone'
     }, inplace=True)
 
-    display = display[['numero_client', 'Num_compteur', 'solde_total_facture', 'telephone']]
+    display = display[['RefContrat', 'Num_compteur', 'solde_total_facture', 'telephone']]
 
     return display, stats
 
@@ -509,6 +477,79 @@ def download_retab_pdf():
         flash(f"Export PDF impossible : {e}")
         return redirect(url_for('retablissements'))
 
+# --- Helpers pour lister et formater ---
+from flask import abort  # ajoute ceci à tes imports Flask
+
+ALLOWED_PAYMENT_EXTS = {'.xlsx', '.xls', '.csv'}  # adapte si besoin
+
+def _human_size(num_bytes):
+    try:
+        num_bytes = float(num_bytes)
+    except Exception:
+        return "0 B"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    while num_bytes >= 1024 and i < len(units) - 1:
+        num_bytes /= 1024.0
+        i += 1
+    return f"{num_bytes:.1f} {units[i]}"
+
+def _list_payment_files():
+    folder = Path(app.config['PAYMENT_FOLDER']).resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    files = []
+    for p in folder.iterdir():
+        if p.is_file() and p.suffix.lower() in ALLOWED_PAYMENT_EXTS:
+            st = p.stat()
+            files.append({
+                "name": p.name,
+                "size": _human_size(st.st_size),
+                "mtime": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
+            })
+    # Tri par date modif desc
+    files.sort(key=lambda x: x["mtime"], reverse=True)
+    return files
+
+# --- Route: liste + suppression ---
+@app.route('/paiements_fichiers', methods=['GET', 'POST'])
+def paiements_fichiers():
+    payment_dir = Path(app.config['PAYMENT_FOLDER']).resolve()
+    payment_dir.mkdir(parents=True, exist_ok=True)
+
+    if request.method == 'POST':
+        # Suppression demandée
+        filename = (request.form.get('filename') or "").strip()
+        if not filename:
+            flash("Nom de fichier manquant.")
+            return redirect(url_for('paiements_fichiers'))
+
+        # Sécurisation: nom de base + dossier contraint
+        safe_name = os.path.basename(filename)
+        candidate = (payment_dir / safe_name).resolve()
+
+        # Empêche toute traversée de répertoire
+        if payment_dir not in candidate.parents and candidate != payment_dir:
+            abort(400, description="Chemin de fichier invalide.")
+
+        # Vérifie extension autorisée
+        if candidate.suffix.lower() not in ALLOWED_PAYMENT_EXTS:
+            flash("Extension non autorisée pour la suppression.")
+            return redirect(url_for('paiements_fichiers'))
+
+        try:
+            if candidate.exists() and candidate.is_file():
+                candidate.unlink()
+                flash(f"Fichier supprimé : {safe_name}")
+            else:
+                flash("Fichier introuvable.")
+        except Exception as e:
+            flash(f"Impossible de supprimer le fichier : {e}")
+
+        return redirect(url_for('paiements_fichiers'))
+
+    # GET : afficher la liste
+    files = _list_payment_files()
+    return render_template('paiements_fichiers.html', files=files)
 
 if __name__ == '__main__':
      app.run(debug=True,use_reloader=False, host='0.0.0.0', port=5003)

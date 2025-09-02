@@ -1,0 +1,50 @@
+{% extends "base.html" %} {# ou ton layout si différent #}
+{% block content %}
+<div class="container mt-4">
+  <h3>Fichiers de paiements ({{ files|length }})</h3>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="mt-3">
+        {% for msg in messages %}
+          <div class="alert alert-info py-2 my-1">{{ msg|safe }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% if files %}
+    <div class="table-responsive mt-3">
+      <table class="table table-sm table-striped align-middle">
+        <thead>
+          <tr>
+            <th>Nom du fichier</th>
+            <th>Taille</th>
+            <th>Modifié le</th>
+            <th style="width: 1%;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in files %}
+          <tr>
+            <td>{{ f.name }}</td>
+            <td>{{ f.size }}</td>
+            <td>{{ f.mtime }}</td>
+            <td>
+              <form method="post" action="{{ url_for('paiements_fichiers') }}" onsubmit="return confirm('Supprimer {{ f.name }} ?');">
+                <input type="hidden" name="filename" value="{{ f.name }}">
+                <button type="submit" class="btn btn-sm btn-danger">
+                  Supprimer
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-muted mt-3">Aucun fichier trouvé dans le dossier des paiements.</p>
+  {% endif %}
+</div>
+{% endblock %}
