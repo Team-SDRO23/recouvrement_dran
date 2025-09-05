@@ -498,9 +498,7 @@ def retablissements():
             else:
                 table_source = pd.DataFrame(columns=colonnes)
         
-        if 'total_impaye_facture' in table_source.columns:
-             table_source = table_source.sort_values(by='total_impaye_facture', ascending=True)
-
+       
         table_html = table_source.to_html(
             classes='table table-sm table-striped table-hover align-left',
             index=False, border=0, table_id='table-retab', escape=False, na_rep=''
