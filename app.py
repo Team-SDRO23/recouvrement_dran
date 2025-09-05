@@ -1,5 +1,5 @@
 
-from flask import Flask, render_template, request, redirect, url_for, session, flash,send_file
+from flask import Flask, render_template, request, redirect, url_for, session, flash,send_file,send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os, io,csv, re
@@ -9,13 +9,22 @@ import pandas as pd
 from flask_sqlalchemy import SQLAlchemy
 from pathlib import Path
 from datetime import datetime
-
-from utils import _read_any_file,_to_number_cfa,_load_all_payments,_load_impayes,normalize_phone_ci,clean_num_compteur
+from utils import _read_any_file,_to_number_cfa,_load_all_payments,_load_impayes,normalize_phone_ci,clean_num_compteur,_human_size,_canon_key_str
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 import shutil
+from apscheduler.schedulers.background import BackgroundScheduler
+import logging
+
+
+
+from flask import abort  
+ALLOWED_PAYMENT_EXTS = {'.xlsx', '.xls', '.csv'}  
+
+
+
 
 
 
@@ -23,24 +32,15 @@ app = Flask(__name__)
 app.secret_key = 'secret_key'
 app.config['UPLOAD_FOLDER'] = 'impayefacture'
 app.config['PAYMENT_FOLDER'] = 'payementfacture'
-
+app.config['SAVEPAYMENT_FOLDER']='sauvegardepayement'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PAYMENT_FOLDER'], exist_ok=True)
-
+os.makedirs(app.config['SAVEPAYMENT_FOLDER'], exist_ok=True)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# ----------- Modèle User -----------
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50), unique=True, nullable=False)
-    password = db.Column(db.String(200), nullable=False)
-
-
-with app.app_context():
-    db.create_all()
 
 # ----------- Page d'accueil -----------
 @app.route('/')
@@ -122,6 +122,7 @@ def upload_liste_impaye():
 
             df.columns = [str(c).strip() for c in df.columns]
             df = df.loc[:, ~pd.Index(df.columns).duplicated()]
+    
 
             os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
             save_path = os.path.join(app.config['UPLOAD_FOLDER'], 'factureimpaye.xlsx')
@@ -244,7 +245,7 @@ def upload_liste_payement():
                     df = pd.read_csv(StringIO(text), dtype=str,
                                      keep_default_na=False, sep=sep, engine='python')
 
-                # Pour réécriture CSV plus tard
+
                 saver = ('csv', sep, encoding_used)
 
         
@@ -304,26 +305,26 @@ def _compute_retablissemements(app):
     if pay.empty:
         raise ValueError("Aucun fichier de paiements (csv/xlsx) trouvé dans le dossier.")
 
-    # --- Normalisation clés paiements
+    
     if 'RefContrat' in pay.columns:
         pay['RefContrat'] = pay['RefContrat'].astype(str).str.strip()
     else:
         pay['RefContrat'] = pd.NA
 
-    # --- Montants payés
+
     if 'MontantReglement' not in pay.columns:
         pay['MontantReglement'] = '0'
 
     pay['MontantReglement_num'] = pay['MontantReglement'].apply(_to_number_cfa).fillna(0)
 
-    # >>> Somme des paiements PAR CONTRAT (plus de filtre "dernière facture")
+  
     pay_agg = (
         pay.groupby('RefContrat', dropna=False, as_index=False)
            .agg(TotalPayes=('MontantReglement_num', 'sum'))
            .dropna(subset=['RefContrat'])
     )
 
-    # --- Charger impayés
+
     imp_path = os.path.join(app.config['UPLOAD_FOLDER'], 'factureimpaye.xlsx')
     if not os.path.exists(imp_path):
         raise FileNotFoundError("Fichier des impayés introuvable (factureimpaye.xlsx).")
@@ -333,28 +334,27 @@ def _compute_retablissemements(app):
     imp = clean_num_compteur(imp)
 
 
-    want_cols = ['RefContrat', 'Telephone_prive', 'Telephone_pro', 'Solde Total factures échues', 'Num_compteur']
+    want_cols = ['RefContrat', 'Telephone_prive', 'Telephone_pro', 'Total impayés échus en franc', 'Num_compteur']
     for c in want_cols:
         if c not in imp.columns:
             imp[c] = pd.NA
 
-    # Nettoyage clés & téléphones
     imp['RefContrat'] = imp['RefContrat'].astype(str).str.strip()
-    imp['Solde_num'] = imp['Solde Total factures échues'].apply(_to_number_cfa).fillna(0)
+    imp['Solde_num'] = imp['Total impayés échus en franc'].apply(_to_number_cfa).fillna(0)
 
-    # On agrège l'éventuelle multiplicité d'enregistrements impayés par contrat
+  
     imp_agg = (
         imp.groupby('RefContrat', dropna=False, as_index=False)
            .agg({
                'Solde_num': 'first',
-               'Solde Total factures échues': 'first',
+               'Total impayés échus en franc': 'first',
                'Num_compteur': 'first',
                'Telephone_prive': 'first',
                'Telephone_pro': 'first',
            })
     )
 
-    # Normalisation téléphones (après agrégation)
+ 
     imp_agg['Telephone_prive'] = imp_agg['Telephone_prive'].apply(normalize_phone_ci)
     imp_agg['Telephone_pro'] = imp_agg['Telephone_pro'].apply(normalize_phone_ci)
     imp_agg['Telephone_prive'] = (
@@ -362,17 +362,17 @@ def _compute_retablissemements(app):
         imp_agg['Telephone_pro'].fillna('').apply(lambda x: f"<br>{x}" if x else '')
     )
 
-    # --- Fusion totaux payés vs soldes (par RefContrat uniquement)
+  
     out_all = pay_agg.merge(
-        imp_agg[['RefContrat', 'Solde_num', 'Solde Total factures échues', 'Num_compteur', 'Telephone_prive']],
+        imp_agg[['RefContrat', 'Solde_num', 'Total impayés échus en franc', 'Num_compteur', 'Telephone_prive']],
         on='RefContrat',
         how='left'
     )
 
-    # Reste à payer (peut être négatif ou nul => éligible)
+ 
     out_all['Reste'] = (out_all['Solde_num'] - out_all['TotalPayes'])
 
-    # --- Statistiques globales
+  
     nb_clients_total = (
         pay['RefContrat'].astype(str).str.strip().replace('', pd.NA).dropna().nunique()
     )
@@ -386,40 +386,125 @@ def _compute_retablissemements(app):
         'reste_total':        float(out_all['Reste'].sum(skipna=True)),
     }
 
-    # --- Clients éligibles (reste <= 0)
+
     out = out_all[out_all['Reste'].fillna(1) <= 0].copy()
 
-    # Affichage final (infos de contact + solde original)
-    display = out[['RefContrat', 'Num_compteur', 'Solde Total factures échues', 'Telephone_prive']].copy()
+
+    display = out[['RefContrat', 'Num_compteur', 'Total impayés échus en franc', 'Telephone_prive']].copy()
     display.sort_values(by=['RefContrat'], inplace=True, na_position='last')
 
     display.rename(columns={
        
-        'Solde Total factures échues': 'solde_total_facture',
+        'Total impayés échus en franc': 'total_impaye_facture',
         'Telephone_prive': 'telephone'
     }, inplace=True)
 
-    display = display[['RefContrat', 'Num_compteur', 'solde_total_facture', 'telephone']]
+    display = display[['RefContrat', 'Num_compteur', 'total_impaye_facture', 'telephone']]
 
     return display, stats
 
 
-
 @app.route('/retablissements', methods=['GET'])
 def retablissements():
-
     try:
-        display, stats = _compute_retablissemements(app)
+        donnees_retabl, stats = _compute_retablissemements(app)
 
-       
-        table_html = display.to_html(
+        colonnes = ['RefContrat', 'Num_compteur', 'total_impaye_facture', 'telephone']
+        COL_LOT, COL_DATE = 'lot_id', 'date_insertion'
+
+        donnees_retabl = donnees_retabl.loc[:, [c for c in colonnes if c in donnees_retabl.columns]].copy()
+        if 'RefContrat' in donnees_retabl.columns:
+            donnees_retabl['RefContrat'] = donnees_retabl['RefContrat'].astype('string').map(_canon_key_str)
+        if 'Num_compteur' in donnees_retabl.columns:
+            donnees_retabl['Num_compteur'] = donnees_retabl['Num_compteur'].astype('string').map(_canon_key_str)
+        if 'total_impaye_facture' in donnees_retabl.columns:
+            donnees_retabl['total_impaye_facture'] = pd.to_numeric(donnees_retabl['total_impaye_facture'], errors='coerce').round(0).astype('Int64')
+        if 'telephone' in donnees_retabl.columns:
+            t = donnees_retabl['telephone']
+            donnees_retabl['telephone'] = (
+                t.where(t.notna(), '')
+                 .replace(r'^\s*(nan|NaN|null|None)\s*$', '', regex=True)
+                 .astype(str).str.strip()
+            )
+
+        donnees_retabl = donnees_retabl.dropna(subset=['RefContrat','Num_compteur'])
+        donnees_retabl = donnees_retabl[(donnees_retabl['RefContrat']!='') & (donnees_retabl['Num_compteur']!='')]
+
+        cles = ['RefContrat','Num_compteur','total_impaye_facture']
+        donnees_retabl = donnees_retabl.drop_duplicates(subset=cles, keep='last')
+
+        dossier = Path(app.config['SAVEPAYMENT_FOLDER']).resolve()
+        dossier.mkdir(parents=True, exist_ok=True)
+        chemin = dossier / "save_payement.xlsx"
+
+        try:
+            df_sav = pd.read_excel(chemin, dtype=str)
+        except FileNotFoundError:
+            df_sav = pd.DataFrame(columns=colonnes + [COL_LOT, COL_DATE])
+
+        for c in colonnes + [COL_LOT, COL_DATE]:
+            if c not in df_sav.columns:
+                df_sav[c] = pd.Series(dtype='object')
+
+        df_sav['RefContrat'] = df_sav['RefContrat'].astype('string').map(_canon_key_str)
+        df_sav['Num_compteur'] = df_sav['Num_compteur'].astype('string').map(_canon_key_str)
+        df_sav['total_impaye_facture'] = pd.to_numeric(df_sav['total_impaye_facture'], errors='coerce').round(0).astype('Int64')
+        if 'telephone' in df_sav.columns:
+            t = df_sav['telephone']
+            df_sav['telephone'] = (
+                t.where(t.notna(), '')
+                 .replace(r'^\s*(nan|NaN|null|None)\s*$', '', regex=True)
+                 .astype(str).str.strip()
+            )
+        df_sav[COL_LOT] = pd.to_numeric(df_sav[COL_LOT], errors='coerce').astype('Int64')
+        df_sav[COL_DATE] = pd.to_datetime(df_sav[COL_DATE], errors='coerce')
+        df_sav = df_sav.dropna(subset=['RefContrat','Num_compteur'])
+        df_sav = df_sav.drop_duplicates(subset=cles, keep='last')
+
+        base_cle = df_sav[cles].drop_duplicates()
+        fusion = donnees_retabl.merge(base_cle, how='left', on=cles, indicator=True)
+        nouveaux = fusion[fusion['_merge']=='left_only'].drop(columns=['_merge'])
+        nb_nouveaux = len(nouveaux)
+
+        if nb_nouveaux > 0:
+            last_lot = (df_sav[COL_LOT].dropna().max() if not df_sav.empty else pd.NA)
+            next_lot = (int(last_lot)+1) if pd.notna(last_lot) else 1
+            ts_now = pd.Timestamp(datetime.now())
+            nouveaux = nouveaux.copy()
+            nouveaux[COL_LOT] = next_lot
+            nouveaux[COL_DATE] = ts_now
+            df_out = pd.concat(
+                [df_sav[colonnes+[COL_LOT,COL_DATE]],
+                 nouveaux[colonnes+[COL_LOT,COL_DATE]]],
+                ignore_index=True
+            )
+            df_out = df_out.drop_duplicates(subset=cles, keep='last')
+            if 'telephone' in df_out.columns:
+                df_out['telephone'] = df_out['telephone'].fillna('')
+            with pd.ExcelWriter(chemin, engine='openpyxl', mode='w') as w:
+                df_out.to_excel(w, index=False)
+            flash(f"{nb_nouveaux} nouveau(x) client(s)", category='success')
+            table_source = nouveaux[colonnes].copy()
+        else:
+            df_sav = df_sav.drop_duplicates(subset=cles, keep='last')
+            if 'telephone' in df_sav.columns:
+                df_sav['telephone'] = df_sav['telephone'].fillna('')
+            with pd.ExcelWriter(chemin, engine='openpyxl', mode='w') as w:
+                df_sav.to_excel(w, index=False)
+            if not df_sav.empty and df_sav[COL_LOT].notna().any():
+                last_lot = int(df_sav[COL_LOT].dropna().max())
+                table_source = df_sav[df_sav[COL_LOT]==last_lot][colonnes].copy()
+                
+            else:
+                table_source = pd.DataFrame(columns=colonnes)
+
+        table_html = table_source.to_html(
             classes='table table-sm table-striped table-hover align-left',
-            index=False, border=0, table_id='table-retab', escape=False
+            index=False, border=0, table_id='table-retab', escape=False, na_rep=''
         )
         return render_template('retablissements.html', table_html=table_html, stats=stats)
-
     except Exception as e:
-        flash(f"Erreur pendant le calcul : {e}")
+        flash(f"Erreur pendant le calcul : {e}", category='danger')
         return render_template('retablissements.html', table_html=None, stats=None)
 
 
@@ -475,22 +560,7 @@ def download_retab_pdf():
         flash(f"Export PDF impossible : {e}")
         return redirect(url_for('retablissements'))
 
-# --- Helpers pour lister et formater ---
-from flask import abort  # ajoute ceci à tes imports Flask
 
-ALLOWED_PAYMENT_EXTS = {'.xlsx', '.xls', '.csv'}  # adapte si besoin
-
-def _human_size(num_bytes):
-    try:
-        num_bytes = float(num_bytes)
-    except Exception:
-        return "0 B"
-    units = ["B", "KB", "MB", "GB", "TB"]
-    i = 0
-    while num_bytes >= 1024 and i < len(units) - 1:
-        num_bytes /= 1024.0
-        i += 1
-    return f"{num_bytes:.1f} {units[i]}"
 
 def _list_payment_files():
     folder = Path(app.config['PAYMENT_FOLDER']).resolve()
@@ -504,50 +574,75 @@ def _list_payment_files():
                 "size": _human_size(st.st_size),
                 "mtime": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
             })
-    # Tri par date modif desc
+
     files.sort(key=lambda x: x["mtime"], reverse=True)
     return files
 
-# --- Route: liste + suppression ---
+
 @app.route('/paiements_fichiers', methods=['GET', 'POST'])
 def paiements_fichiers():
     payment_dir = Path(app.config['PAYMENT_FOLDER']).resolve()
     payment_dir.mkdir(parents=True, exist_ok=True)
 
     if request.method == 'POST':
-        # Suppression demandée
-        filename = (request.form.get('filename') or "").strip()
-        if not filename:
-            flash("Nom de fichier manquant.")
+       
+        filenames = request.form.getlist('filenames')
+        if not filenames:
+            flash("Aucun fichier sélectionné.")
             return redirect(url_for('paiements_fichiers'))
 
-        # Sécurisation: nom de base + dossier contraint
-        safe_name = os.path.basename(filename)
-        candidate = (payment_dir / safe_name).resolve()
+        deleted, skipped = [], []
 
-        # Empêche toute traversée de répertoire
-        if payment_dir not in candidate.parents and candidate != payment_dir:
-            abort(400, description="Chemin de fichier invalide.")
+        for filename in filenames:
+            safe_name = os.path.basename(filename).strip()
+            candidate = (payment_dir / safe_name).resolve()
 
-        # Vérifie extension autorisée
-        if candidate.suffix.lower() not in ALLOWED_PAYMENT_EXTS:
-            flash("Extension non autorisée pour la suppression.")
-            return redirect(url_for('paiements_fichiers'))
+            if payment_dir not in candidate.parents and candidate != payment_dir:
+                skipped.append(safe_name); continue
+            if candidate.suffix.lower() not in ALLOWED_PAYMENT_EXTS:
+                skipped.append(safe_name); continue
 
-        try:
-            if candidate.exists() and candidate.is_file():
-                candidate.unlink()
-                flash(f"Fichier supprimé : {safe_name}")
-            else:
-                flash("Fichier introuvable.")
-        except Exception as e:
-            flash(f"Impossible de supprimer le fichier : {e}")
+            try:
+                if candidate.exists() and candidate.is_file():
+                    candidate.unlink()
+                    deleted.append(safe_name)
+                else:
+                    skipped.append(safe_name)
+            except Exception as e:
+                skipped.append(f"{safe_name} (err: {e})")
+
+        if deleted:
+            flash(f"Supprimés : {', '.join(deleted)}")
+        if skipped:
+            flash(f"Non supprimés : {', '.join(skipped)}")
 
         return redirect(url_for('paiements_fichiers'))
 
-    # GET : afficher la liste
     files = _list_payment_files()
     return render_template('paiements_fichiers.html', files=files)
+
+
+def nettoyer_sauvegardes():
+    dossier = Path(app.config['SAVEPAYMENT_FOLDER']).resolve()
+    if dossier.exists():
+        for f in dossier.iterdir():
+            if f.is_file():
+                try:
+                    os.remove(f)
+                    app.logger.info(f"Supprimé : {f}")
+                except Exception as e:
+                    app.logger.error(f"Erreur suppression {f} : {e}")
+
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(nettoyer_sauvegardes, 'cron', hour=2, minute=0)
+scheduler.start()
+
+
+logging.getLogger('apscheduler').setLevel(logging.WARNING)
+
+
+
 
 if __name__ == '__main__':
      app.run(debug=True,use_reloader=False, host='0.0.0.0', port=5003)

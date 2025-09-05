@@ -51,29 +51,36 @@ def _to_number_cfa(x: str):
     return pd.to_numeric(s, errors='coerce')
 import re
 import pandas as pd
+import re
+import pandas as pd
 
 def normalize_phone_ci(x):
-
-    if x is None or (isinstance(x, float) and pd.isna(x)):
+    # Traite les manquants (None, np.nan, pd.NA, NaT, etc.)
+    if pd.isna(x):
         return ''
     
-    s = str(x)
+    s = str(x).strip()
 
-    # 1) supprimer +225
+    if s == '' or s.lower() in {'nan', 'none', 'null', 'na', 'n/a', '#n/a'}:
+        return ''
+
+   
     s = re.sub(r'\+225', '', s, flags=re.IGNORECASE)
 
+   
     s = re.sub(r'[\s\u00A0\.\-\(\)]', '', s)
 
-    # 3) garder uniquement les chiffres
     digits = re.sub(r'\D', '', s)
 
-    # 4) règles de validation
-    if len(digits) < 8:       
+  
+    if len(digits) < 8:
         return ''
     elif len(digits) == 8:
         return digits[-8:]
-    elif len(digits) == 10:   
+    elif len(digits) == 10:
         return digits[-10:]
+    
+    return ''
 
 
 def _load_all_payments(folder: str) -> pd.DataFrame:
@@ -122,21 +129,164 @@ def _load_impayes(path: str) -> pd.DataFrame:
         imp.rename(columns={'Téléphone professionnel': 'Telephone_pro'}, inplace=True)
     if 'Numéro compteur' in imp.columns and 'Num_compteur' not in imp.columns:
         imp.rename(columns={'Numéro compteur': 'Num_compteur'}, inplace=True)
-    if 'Solde Total factures échues' not in imp.columns:
+    if 'Total impayés échus en franc' not in imp.columns:
       
         for k in imp.columns:
-            if 'Solde' in k and 'échue' in k:
-                imp.rename(columns={k: 'Solde Total factures échues'}, inplace=True)
+            if 'impayés' in k and 'franc' in k:
+                imp.rename(columns={k: 'Total impayés échus en franc'}, inplace=True)
                 break
     return imp
 
 def clean_num_compteur(df: pd.DataFrame) -> pd.DataFrame:
 
     df = df.copy()
-    df['Num_compteur'] = df['Num_compteur'].astype(str).str.replace('nan', '')  # éviter les NaN en texte
+    df['Num_compteur'] = df['Num_compteur'].astype(str).str.replace('nan', '')
     
     df['Num_compteur'] = df['Num_compteur'].apply(
         lambda x: x.split('_', 1)[-1] if '_' in x else x
     )
     return df
 
+
+def _human_size(num_bytes):
+    try:
+        num_bytes = float(num_bytes)
+    except Exception:
+        return "0 B"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    while num_bytes >= 1024 and i < len(units) - 1:
+        num_bytes /= 1024.0
+        i += 1
+    return f"{num_bytes:.1f} {units[i]}"
+
+
+def _canon_key_str(x):
+    s = re.sub(r"\D", "", str(x).strip())
+    return pd.NA if s == "" else s
+
+
+
+# def _dossier_sauvegarde() -> Path:
+#     dossier = Path(app.config['SAVEPAYMENT_FOLDER']).resolve()
+#     dossier.mkdir(parents=True, exist_ok=True)
+#     return dossier
+
+
+# def _verifier_chemin_secure(nom_fichier: str) -> Path:
+#     """Vérifie et sécurise le chemin du fichier demandé."""
+#     dossier = _dossier_sauvegarde()
+#     nom_nettoye = secure_filename(nom_fichier)
+#     if not nom_nettoye:
+#         raise ValueError("Nom de fichier invalide.")
+#     chemin = (dossier / nom_nettoye).resolve()
+#     if dossier not in chemin.parents and chemin != dossier:
+#         raise ValueError("Chemin de fichier non autorisé.")
+#     return chemin
+
+
+# @app.route('/sauvegardes', methods=['GET'])
+# def lister_sauvegardes():
+#     """Liste brute des fichiers dans la sauvegarde."""
+#     try:
+#         dossier = _dossier_sauvegarde()
+#         fichiers = []
+#         for f in sorted(dossier.iterdir()):
+#             if f.is_file():
+#                 stat = f.stat()
+#                 fichiers.append({
+#                     "nom": f.name,
+#                     "taille": stat.st_size,  # en octets
+#                     "modifie_le": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+#                 })
+
+#         return render_template('sauvegardes.html', fichiers=fichiers)
+
+#     except Exception as e:
+#         flash(f"Erreur lors de la lecture des sauvegardes : {e}", category='danger')
+#         return render_template('sauvegardes.html', fichiers=[])
+
+
+# @app.route('/sauvegardes/telecharger/<path:nom_fichier>', methods=['GET'])
+# def telecharger_sauvegarde(nom_fichier: str):
+#     """Télécharge un fichier depuis la sauvegarde."""
+#     try:
+#         chemin = _verifier_chemin_secure(nom_fichier)
+#         dossier = chemin.parent
+#         return send_from_directory(
+#             directory=str(dossier),
+#             path=chemin.name,
+#             as_attachment=True
+#         )
+#     except Exception as e:
+#         flash(f"Téléchargement impossible : {e}", category='danger')
+#         return redirect(url_for('lister_sauvegardes'))
+
+
+# @app.route('/sauvegardes/supprimer', methods=['POST'])
+# def supprimer_sauvegarde():
+#     """Supprime un fichier sélectionné."""
+#     nom_fichier = request.form.get('nom_fichier', '')
+#     try:
+#         chemin = _verifier_chemin_secure(nom_fichier)
+#         if not chemin.exists() or not chemin.is_file():
+#             flash("Fichier introuvable.", category='warning')
+#             return redirect(url_for('lister_sauvegardes'))
+
+#         os.remove(chemin)
+#         flash(f"Fichier « {chemin.name} » supprimé avec succès.", category='success')
+#     except Exception as e:
+#         flash(f"Suppression impossible : {e}", category='danger')
+
+#     return redirect(url_for('lister_sauvegardes'))
+# {% extends "base.html" %}
+# {% block content %}
+# <div class="container py-3">
+#   <h3>Fichiers de sauvegarde</h3>
+
+#   {% with messages = get_flashed_messages(with_categories=true) %}
+#     {% if messages %}
+#       {% for category, message in messages %}
+#         <div class="alert alert-{{ category }} my-2" role="alert">{{ message }}</div>
+#       {% endfor %}
+#     {% endif %}
+#   {% endwith %}
+
+#   {% if fichiers and fichiers|length > 0 %}
+#     <table class="table table-sm table-striped align-middle">
+#       <thead>
+#         <tr>
+#           <th>Nom</th>
+#           <th>Taille (octets)</th>
+#           <th>Modifié le</th>
+#           <th class="text-end">Actions</th>
+#         </tr>
+#       </thead>
+#       <tbody>
+#         {% for f in fichiers %}
+#           <tr>
+#             <td>{{ f.nom }}</td>
+#             <td>{{ f.taille }}</td>
+#             <td>{{ f.modifie_le }}</td>
+#             <td class="text-end">
+#               <a class="btn btn-outline-primary btn-sm"
+#                  href="{{ url_for('telecharger_sauvegarde', nom_fichier=f.nom) }}">
+#                 Télécharger
+#               </a>
+#               <form method="post"
+#                     action="{{ url_for('supprimer_sauvegarde') }}"
+#                     style="display:inline-block"
+#                     onsubmit="return confirm('Supprimer définitivement {{ f.nom }} ?');">
+#                 <input type="hidden" name="nom_fichier" value="{{ f.nom }}">
+#                 <button type="submit" class="btn btn-outline-danger btn-sm">Supprimer</button>
+#               </form>
+#             </td>
+#           </tr>
+#         {% endfor %}
+#       </tbody>
+#     </table>
+#   {% else %}
+#     <p>Aucun fichier dans la sauvegarde.</p>
+#   {% endif %}
+# </div>
+# {% endblock %}

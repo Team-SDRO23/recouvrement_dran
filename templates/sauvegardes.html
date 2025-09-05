@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-3">
+  <h3>Fichiers de sauvegarde</h3>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }} my-2" role="alert">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% if fichiers and fichiers|length > 0 %}
+    <table class="table table-sm table-striped align-middle">
+      <thead>
+        <tr>
+          <th>Nom</th>
+          <th>Taille (octets)</th>
+          <th>Modifié le</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in fichiers %}
+          <tr>
+            <td>{{ f.nom }}</td>
+            <td>{{ f.taille }}</td>
+            <td>{{ f.modifie_le }}</td>
+            <td class="text-end">
+              <a class="btn btn-outline-primary btn-sm"
+                 href="{{ url_for('telecharger_sauvegarde', nom_fichier=f.nom) }}">
+                Télécharger
+              </a>
+              <form method="post"
+                    action="{{ url_for('supprimer_sauvegarde') }}"
+                    style="display:inline-block"
+                    onsubmit="return confirm('Supprimer définitivement {{ f.nom }} ?');">
+                <input type="hidden" name="nom_fichier" value="{{ f.nom }}">
+                <button type="submit" class="btn btn-outline-danger btn-sm">Supprimer</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Aucun fichier dans la sauvegarde.</p>
+  {% endif %}
+</div>
+{% endblock %}
