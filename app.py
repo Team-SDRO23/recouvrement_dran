@@ -497,6 +497,9 @@ def retablissements():
                 
             else:
                 table_source = pd.DataFrame(columns=colonnes)
+        
+        if 'total_impaye_facture' in table_source.columns:
+             table_source = table_source.sort_values(by='total_impaye_facture', ascending=True)
 
         table_html = table_source.to_html(
             classes='table table-sm table-striped table-hover align-left',
@@ -643,6 +646,79 @@ logging.getLogger('apscheduler').setLevel(logging.WARNING)
 
 
 
+
+def _dossier_sauvegarde() -> Path:
+    dossier = Path(app.config['SAVEPAYMENT_FOLDER']).resolve()
+    dossier.mkdir(parents=True, exist_ok=True)
+    return dossier
+
+
+def _verifier_chemin_secure(nom_fichier: str) -> Path:
+    """Vérifie et sécurise le chemin du fichier demandé."""
+    dossier = _dossier_sauvegarde()
+    nom_nettoye = secure_filename(nom_fichier)
+    if not nom_nettoye:
+        raise ValueError("Nom de fichier invalide.")
+    chemin = (dossier / nom_nettoye).resolve()
+    if dossier not in chemin.parents and chemin != dossier:
+        raise ValueError("Chemin de fichier non autorisé.")
+    return chemin
+
+
+@app.route('/sauvegardes', methods=['GET'])
+def lister_sauvegardes():
+    """Liste brute des fichiers dans la sauvegarde."""
+    try:
+        dossier = _dossier_sauvegarde()
+        fichiers = []
+        for f in sorted(dossier.iterdir()):
+            if f.is_file():
+                stat = f.stat()
+                fichiers.append({
+                    "nom": f.name,
+                    "taille": stat.st_size,  # en octets
+                    "modifie_le": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                })
+
+        return render_template('sauvegardes.html', fichiers=fichiers)
+
+    except Exception as e:
+        flash(f"Erreur lors de la lecture des sauvegardes : {e}", category='danger')
+        return render_template('sauvegardes.html', fichiers=[])
+
+
+@app.route('/sauvegardes/telecharger/<path:nom_fichier>', methods=['GET'])
+def telecharger_sauvegarde(nom_fichier: str):
+    """Télécharge un fichier depuis la sauvegarde."""
+    try:
+        chemin = _verifier_chemin_secure(nom_fichier)
+        dossier = chemin.parent
+        return send_from_directory(
+            directory=str(dossier),
+            path=chemin.name,
+            as_attachment=True
+        )
+    except Exception as e:
+        flash(f"Téléchargement impossible : {e}", category='danger')
+        return redirect(url_for('lister_sauvegardes'))
+
+
+@app.route('/sauvegardes/supprimer', methods=['POST'])
+def supprimer_sauvegarde():
+    """Supprime un fichier sélectionné."""
+    nom_fichier = request.form.get('nom_fichier', '')
+    try:
+        chemin = _verifier_chemin_secure(nom_fichier)
+        if not chemin.exists() or not chemin.is_file():
+            flash("Fichier introuvable.", category='warning')
+            return redirect(url_for('lister_sauvegardes'))
+
+        os.remove(chemin)
+        flash(f"Fichier « {chemin.name} » supprimé avec succès.", category='success')
+    except Exception as e:
+        flash(f"Suppression impossible : {e}", category='danger')
+
+    return redirect(url_for('lister_sauvegardes'))
 
 if __name__ == '__main__':
      app.run(debug=True,use_reloader=False, host='0.0.0.0', port=5003)
