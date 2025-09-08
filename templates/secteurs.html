@@ -1,0 +1,170 @@
+{% extends 'base.html' %}
+{% block title %}Choisir un secteur{% endblock %}
+
+{% block content %}
+
+
+
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+
+      <!-- Liste verticale stylée des secteurs (cliquable) -->
+      <ul class="sector-list">
+
+<marquee class="welcome-bar" behavior="scroll" direction="left" scrollamount="7">
+  Bienvenue sur l’application de rétablissement des clients de la DRAN •
+</marquee> </br>
+</ul>
+        <li>
+          <a class="sector-item" style="--accent:#0d6efd"
+             href="{{ url_for('set_secteur', secteur='Adjamé -Nord v') }}">
+            <div class="left">
+              <span class="dot">A</span>
+              <div class="txt">
+                <span class="name">Adjamé -Nord v</span>
+
+              </div>
+            </div>
+            <span class="chev">›</span>
+          </a>
+        </li>
+
+        <li>
+          <a class="sector-item" style="--accent:#20c997"
+             href="{{ url_for('set_secteur', secteur='Adjamé - Sud') }}">
+            <div class="left">
+              <span class="dot">A</span>
+              <div class="txt">
+                <span class="name">Adjamé - Sud</span>
+                
+              </div>
+            </div>
+            <span class="chev">›</span>
+          </a>
+        </li>
+
+        <li>
+          <a class="sector-item" style="--accent:#fd7e14"
+             href="{{ url_for('set_secteur', secteur='Bingerville') }}">
+            <div class="left">
+              <span class="dot">B</span>
+              <div class="txt">
+                <span class="name">Bingerville</span>
+
+              </div>
+            </div>
+            <span class="chev">›</span>
+          </a>
+        </li>
+
+        <li>
+          <a class="sector-item" style="--accent:#6f42c1"
+             href="{{ url_for('set_secteur', secteur='2 Plateaux') }}">
+            <div class="left">
+              <span class="dot">2P</span>
+              <div class="txt">
+                <span class="name">2 Plateaux</span>
+              
+              </div>
+            </div>
+            <span class="chev">›</span>
+          </a>
+        </li>
+
+        <li>
+          <a class="sector-item" style="--accent:#198754"
+             href="{{ url_for('set_secteur', secteur='Cocody') }}">
+            <div class="left">
+              <span class="dot">C</span>
+              <div class="txt">
+                <span class="name">Cocody</span>
+                
+              </div>
+            </div>
+            <span class="chev">›</span>
+          </a>
+        </li>
+
+        <li>
+          <a class="sector-item" style="--accent:#e83e8c"
+             href="{{ url_for('set_secteur', secteur='Djibi') }}">
+            <div class="left">
+              <span class="dot">D</span>
+              <div class="txt">
+                <span class="name">Djibi</span>
+               
+              </div>
+            </div>
+            <span class="chev">›</span>
+          </a>
+        </li>
+
+      </ul>
+    </div>
+  </div>
+</div>
+
+
+<style>
+ 
+  .welcome-bar{
+    display:block;
+    width:100%;
+    padding:.6rem 0;
+    font-weight:700;
+    letter-spacing:.3px;
+    color:#fff;
+    text-shadow:0 1px 2px rgba(0,0,0,.25);
+    background: linear-gradient(90deg,#c3beb7,#b46e06,#20c997,#fd7e14);
+    background-size:200% 100%;
+    animation:grad-move 12s linear infinite;
+    position:center;
+  }
+  @keyframes grad-move{
+    0%{background-position:0 0} 100%{background-position:200% 0}
+  }
+
+ 
+  .sector-list{ list-style:none; margin:0; padding:0; }
+  .sector-item{
+    --accent:#0d6efd;
+    position:relative;
+    display:flex; align-items:center; justify-content:space-between;
+    gap:.75rem;
+    padding:1rem 1rem 1rem 1rem;
+    margin-bottom:.8rem;
+    text-decoration:none;
+    background:#fff;
+    border:1px solid rgba(0,0,0,.06);
+    border-radius:14px;
+    box-shadow:0 1px 0 rgba(0,0,0,.03);
+    transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;
+  }
+  .sector-item::before{
+    content:""; position:absolute; inset:0 auto 0 0; width:8px;
+    border-radius:14px 0 0 14px; background: var(--accent);
+    opacity:.9;
+  }
+  .sector-item:hover{
+    transform:translateY(-2px);
+    box-shadow:0 10px 22px rgba(0,0,0,.08);
+    border-color: color-mix(in srgb, var(--accent) 25%, #0000);
+    background: linear-gradient(180deg, rgba(13,110,253,.02), rgba(0,0,0,0));
+  }
+  .sector-item .left{ display:flex; align-items:center; gap:.8rem; }
+  .sector-item .dot{
+    width:40px; height:40px; border-radius:999px;
+    display:grid; place-items:center;
+    color:#fff; font-weight:800;
+    background: radial-gradient(120% 120% at 30% 30%, #ffffff55 0%, #ffffff00 40%), var(--accent);
+    box-shadow:0 6px 14px color-mix(in srgb, var(--accent) 35%, #0000);
+  }
+  .sector-item .txt{ line-height:1.1; }
+  .sector-item .name{ display:block; font-weight:600; color:#212529; }
+  .sector-item .abbr{ display:block; font-size:.82rem; color:#6c757d; margin-top:.15rem; }
+  .sector-item .chev{ font-size:1.25rem; color:#6c757d; transition:transform .15s ease; }
+  .sector-item:hover .chev{ transform:translateX(4px); }
+</style>
+
+{% endblock %}

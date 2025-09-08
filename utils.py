@@ -167,6 +167,22 @@ def _canon_key_str(x):
 
 
 
+def _clean_telephone_col(df):
+    # repère la colonne 'telephone' sans sensibilité à la casse
+    cols = {c.lower(): c for c in df.columns}
+    if 'telephone' in cols:
+        col = cols['telephone']
+        s = df[col]
+        df[col] = (
+            s.where(s.notna(), '')
+             .astype(str)
+             .replace(r'^\s*(nan|NaN|null|None)\s*$', '', regex=True)
+             .str.replace(r'<br\s*/?>', ' ', regex=True)  # remplace <br> par espace
+             .str.replace(r'\s+', ' ', regex=True)        # compact les espaces
+             .str.strip()
+        )
+    return df
+
 # def _dossier_sauvegarde() -> Path:
 #     dossier = Path(app.config['SAVEPAYMENT_FOLDER']).resolve()
 #     dossier.mkdir(parents=True, exist_ok=True)

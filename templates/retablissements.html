@@ -2,7 +2,7 @@
 {% block title %}Clients à rétablir{% endblock %}
 
 {% block content %}
-</br></br>
+<br><br>
 <div class="container py-4">
   <div class="d-flex align-items-center justify-content-between mb-3">
     <h1 class="h5 mb-0">Clients éligibles</h1>
@@ -13,16 +13,20 @@
   </div>
 
   {% if stats %}
-  <div class="row g-3 mb-3">
-    <div class="col-6 col-md-3">
+
+  <div class="row row-cols-3 g-3 mb-3">
+    <!-- 1 -->
+    <div class="col">
       <div class="card shadow-sm h-100">
         <div class="card-body text-center">
           <div class="text-muted small">Clients total</div>
-          <div class="fs-5 fw-semibold"> {{ "{:,}".format(stats.nb_clients_total) }}  </div>
+          <div class="fs-5 fw-semibold">{{ "{:,}".format(stats.nb_clients_total) }}</div>
         </div>
       </div>
     </div>
-    <div class="col-6 col-md-3">
+
+    <!-- 2 -->
+    <div class="col">
       <div class="card shadow-sm h-100">
         <div class="card-body text-center">
           <div class="text-muted small">Éligibles</div>
@@ -30,7 +34,9 @@
         </div>
       </div>
     </div>
-    <div class="col-6 col-md-3">
+
+    <!-- 3 -->
+    <div class="col">
       <div class="card shadow-sm h-100">
         <div class="card-body text-center">
           <div class="text-muted small">Total payés</div>
@@ -38,14 +44,7 @@
         </div>
       </div>
     </div>
-    <div class="col-6 col-md-3">
-      <div class="card shadow-sm h-100">
-        <div class="card-body text-center">
-          <div class="text-muted small">Reste à payer</div>
-          <div class="fs-5 fw-semibold">{{ "{:,}".format(stats.reste_total) }}</div>
-        </div>
-      </div>
-    </div>
+
   </div>
   {% endif %}
 
@@ -58,18 +57,15 @@
   {% endif %}
 </div>
 
-<!-- Alignement à gauche -->
 <style>
   #table-retab th, #table-retab td { text-align: left !important; vertical-align: middle; }
   .dataTables_wrapper .dataTables_paginate .paginate_button { padding: .25rem .5rem; }
 </style>
 
-<!-- DataTables (Bootstrap 5) -->
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
 <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
-
 <script>
   $(function () {
     $('#table-retab').DataTable({
