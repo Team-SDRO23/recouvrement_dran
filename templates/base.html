@@ -98,21 +98,19 @@
   </nav>
 
   <main class="container py-4">
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-  <div class="position-fixed top-0 start-50 translate-middle-x mt-3"
-       style="z-index:1080; width:min(520px, 90vw);">
-    {% for category, msg in messages %}
-      <div class="alert alert-{{ category|default('info') }} alert-dismissible fade show shadow" role="alert">
-        {{ msg }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fermer"></button>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <div class="position-fixed top-0 start-50 translate-middle-x mt-3"
+          style="z-index:1080; width:min(520px, 90vw);">
+        {% for category, msg in messages %}
+          <div class="alert alert-{{ category|default('info') }} alert-dismissible fade show shadow" role="alert">
+            {{ msg }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fermer"></button>
+          </div>
+        {% endfor %}
       </div>
-    {% endfor %}
-  </div>
-  {% endif %}
-{% endwith %}
-
-
+      {% endif %}
+    {% endwith %}
 
     {% block content %}{% endblock %}
   </main>
@@ -134,7 +132,7 @@
         setTimeout(() => {
          
           el.classList.add('fade-out');
-         
+
           setTimeout(() => {
             if (window.bootstrap && bootstrap.Alert) {
               bootstrap.Alert.getOrCreateInstance(el).close();

@@ -26,39 +26,30 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from zoneinfo import ZoneInfo
 
 # -------------------------------------------------------
-# Config (chemins ABSOLUS)
+# Config
 # -------------------------------------------------------
 ALLOWED_PAYMENT_EXTS = {'.xlsx', '.xls', '.csv'}
-
-BASE_DIR = Path(__file__).resolve().parent  
 
 app = Flask(__name__)
 app.secret_key = 'secret_key'
 
-# Dossiers de données 
-UPLOAD_DIR       = (BASE_DIR / 'impayefacture').resolve()
-PAYMENT_DIR      = (BASE_DIR / 'payementfacture').resolve()
-SAVEPAYMENT_DIR  = (BASE_DIR / 'sauvegardepayement').resolve()
+app.config['UPLOAD_FOLDER']      = 'impayefacture'        
+app.config['PAYMENT_FOLDER']     = 'payementfacture'      
+app.config['SAVEPAYMENT_FOLDER'] = 'sauvegardepayement' 
 
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-PAYMENT_DIR.mkdir(parents=True, exist_ok=True)
-SAVEPAYMENT_DIR.mkdir(parents=True, exist_ok=True)
+Path(app.config['UPLOAD_FOLDER']).mkdir(parents=True, exist_ok=True)
+Path(app.config['PAYMENT_FOLDER']).mkdir(parents=True, exist_ok=True)
+Path(app.config['SAVEPAYMENT_FOLDER']).mkdir(parents=True, exist_ok=True)
 
-
-app.config['UPLOAD_FOLDER']      = UPLOAD_DIR
-app.config['PAYMENT_FOLDER']     = PAYMENT_DIR
-app.config['SAVEPAYMENT_FOLDER'] = SAVEPAYMENT_DIR
-
-DB_PATH = (BASE_DIR / 'users.db').resolve()
-
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{DB_PATH.as_posix()}"
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 app.config.update(
-    PREFERRED_URL_SCHEME='https',
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_SAMESITE='Lax',
+    PREFERRED_URL_SCHEME='https',      # tu sers en HTTPS côté front
+    SESSION_COOKIE_SECURE=True,        # cookie secure (reco en prod)
+    SESSION_COOKIE_SAMESITE='Lax',     # défaut sûr pour navigation
+    # SESSION_COOKIE_DOMAIN='dran.dxteriz.com',  # pas nécessaire sauf sous-domaines
 )
 
 db = SQLAlchemy(app)
@@ -114,11 +105,11 @@ def _savebook_path_for_sector(secteur: str) -> Path:
 
 def _list_secteurs() -> list:
     """Liste des secteurs distincts trouvés dans les fichiers de paiements."""
-    pf: Path = Path(app.config['PAYMENT_FOLDER']).resolve()
-    if not pf.is_dir():
+    pf = app.config['PAYMENT_FOLDER']
+    if not os.path.isdir(pf):
         return []
     try:
-        pay = _load_all_payments(str(pf))  
+        pay = _load_all_payments(pf)
     except Exception:
         return []
     if pay.empty or 'Secteurs' not in pay.columns:
@@ -134,7 +125,7 @@ SECTEURS_FIXES = [
     "2 Plateaux", "Cocody", "Djibi"
 ]
 SECT_ABBR = {
-    'Adjamé -Nord': 'Adj-N',
+    'Adjamé -Nord v': 'Adj-N',
     'Adjamé - Sud':   'Adj-S',
     'Bingerville':    'Bing.',
     '2 Plateaux':     '2P',
@@ -151,8 +142,10 @@ def sect_abbr(name):
 # -------------------------------------------------------
 @app.route('/')
 def home():
+   
     if not _active_secteur():
         return redirect(url_for('choisir_secteur'))
+  
     return redirect(url_for('retablissements'))
 
 @app.route('/secteurs', methods=['GET'])
@@ -165,7 +158,7 @@ def choisir_secteur():
 def set_secteur():
     s = request.args.get('secteur', '').strip()
     if s not in SECTEURS_FIXES:
-        flash(f"Secteur invalide.", "warning")
+        flash("Secteur invalide.", "warning")
         return redirect(url_for('choisir_secteur'))
     session['secteur'] = s
     flash(f"Secteur sélectionné : {s}", "success")
@@ -198,12 +191,12 @@ def upload_liste_impaye():
     if request.method == 'POST':
         file = request.files.get('file')
         if not file or not file.filename:
-            flash(f"Veuillez choisir un fichier.", "info")
+            flash("Veuillez choisir un fichier." ,"info")
             return render_template('upload_liste_impaye.html')
 
         ext = file.filename.lower().rsplit('.', 1)[-1]
         if ext not in ('xlsx', 'xls', 'csv'):
-            flash(f"Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV." , "info")
+            flash("Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV." ,"info")
             return render_template('upload_liste_impaye.html')
 
         try:
@@ -225,6 +218,7 @@ def upload_liste_impaye():
 
             df = df.replace(r'^\s*$', pd.NA, regex=True)
 
+         
             colnames = list(df.columns)
             mask_bad = np.array([
                 (c is None) or (str(c).strip() == "") or str(c).lower().startswith("unnamed")
@@ -236,8 +230,9 @@ def upload_liste_impaye():
             df.columns = [str(c).strip() for c in df.columns]
             df = df.loc[:, ~pd.Index(df.columns).duplicated()]
 
-            save_path = _impaye_path_for_sector(secteur) 
-            df.to_excel(str(save_path), index=False)
+           
+            save_path = _impaye_path_for_sector(secteur)
+            df.to_excel(save_path, index=False)
 
             # aperçu
             df_preview = df.iloc[:, :5].head(10).fillna("")
@@ -246,7 +241,7 @@ def upload_liste_impaye():
                 index=False, border=0, escape=False
             )
 
-            flash(f"Fichier d’impayés enregistré pour le secteur « {secteur} ».", "info")
+            flash(f"Fichier d’impayés enregistré pour le secteur « {secteur} »." ,"info")
         except Exception as e:
             flash(f"Erreur lors du traitement du fichier : {e}", "danger")
 
@@ -264,7 +259,7 @@ def upload_liste_payement():
     if request.method == 'POST':
         file = request.files.get('file') or (request.files.getlist('files') or [None])[0]
         if not file:
-            flash(f"Veuillez choisir un fichier (.xlsx, .xls ou .csv).","info")
+            flash("Veuillez choisir un fichier (.xlsx, .xls ou .csv)." ,"info")
             return render_template('upload_liste_payement.html',
                                    data_preview_html=None, uploaded_names=None,
                                    added_rows=0, duplicates_removed=0)
@@ -272,7 +267,7 @@ def upload_liste_payement():
         filename = secure_filename(file.filename or "")
         ext = Path(filename).suffix.lower()
         if ext not in ('.xlsx', '.xls', '.csv'):
-            flash(f"Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV (.csv).", "info")
+            flash("Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV (.csv)." ,"info")
             return render_template('upload_liste_payement.html',
                                    data_preview_html=None, uploaded_names=None,
                                    added_rows=0, duplicates_removed=0)
@@ -331,15 +326,15 @@ def upload_liste_payement():
             data_preview_html = preview_df.to_html(classes='table table-sm table-striped',
                                                    index=False, border=0)
 
-            payment_folder: Path = Path(app.config['PAYMENT_FOLDER']).resolve()
-            payment_folder.mkdir(parents=True, exist_ok=True)
-            save_path = (payment_folder / filename).resolve()
+            payment_folder = app.config['PAYMENT_FOLDER']
+            Path(payment_folder).mkdir(parents=True, exist_ok=True)
+            save_path = os.path.join(payment_folder, filename)
             if saver == 'excel':
-                df.to_excel(str(save_path), index=False)
+                df.to_excel(save_path, index=False)
             else:
                 _, sep, enc = saver
                 enc_out = 'utf-8-sig' if enc and enc.startswith('utf-8') else (enc or 'utf-8-sig')
-                df.to_csv(str(save_path), index=False, sep=sep, encoding=enc_out)
+                df.to_csv(save_path, index=False, sep=sep, encoding=enc_out)
 
             uploaded_names = [filename]; added_rows = len(df)
             flash(f"Fichier de paiements enregistré ({filename}, {added_rows} lignes).", "success")
@@ -364,14 +359,16 @@ def _compute_retablissemements(app):
     if not secteur:
         raise ValueError("Secteur non sélectionné.")
 
-    payment_folder: Path = Path(app.config['PAYMENT_FOLDER']).resolve()
-    if not payment_folder.is_dir():
+    payment_folder = app.config['PAYMENT_FOLDER']
+    if not os.path.isdir(payment_folder):
         raise FileNotFoundError("Le dossier de paiements n'existe pas.")
 
-    pay = _load_all_payments(str(payment_folder))
+    pay = _load_all_payments(payment_folder)
     if pay.empty:
         raise ValueError("Aucun fichier de paiements (csv/xlsx) trouvé.")
+  
 
+  
     if 'Secteurs' not in pay.columns:
         raise ValueError("Les paiements ne contiennent pas la colonne « Secteurs ».")
 
@@ -415,7 +412,9 @@ def _compute_retablissemements(app):
     # Impayés — SECTEUR
     imp_path = _impaye_path_for_sector(secteur)
     if not imp_path.exists():
-        raise FileNotFoundError("Fichier des impayés introuvable")
+        raise FileNotFoundError(
+            f"Fichier des impayés introuvable"
+        )
     imp = _load_impayes(str(imp_path))
     imp = clean_num_compteur(imp)
 
@@ -456,7 +455,7 @@ def _compute_retablissemements(app):
     out = out_all[out_all['Reste'].fillna(1) <= 0].copy()
     nb_eligibles_total = len(out)
 
-  
+    # stats (dans ce mode, une seule zone = secteur actif)
     eligibles_by_zone = {secteur: nb_eligibles_total}
 
     stats = {
@@ -467,6 +466,7 @@ def _compute_retablissemements(app):
         'reste_total':        float(out_all['Reste'].sum(skipna=True)),
         'eligibles_by_zone':  eligibles_by_zone,
         'secteur_actif':      secteur,
+        
     }
 
     display = out[['RefContrat','Num_compteur',
@@ -520,11 +520,11 @@ def retablissements():
         donnees_retabl = donnees_retabl[(donnees_retabl['RefContrat']!='') & (donnees_retabl['Num_compteur']!='')]
         donnees_retabl = donnees_retabl.drop_duplicates(subset=cles, keep='last')
 
-        # fichier par secteur (ABSOLU)
+        # fichier par secteur
         xlsx_path = _savebook_path_for_sector(secteur)
 
         if xlsx_path.exists():
-            xls = pd.ExcelFile(str(xlsx_path))
+            xls = pd.ExcelFile(xlsx_path)
             sheets = xls.sheet_names
             df_sav = pd.concat([xls.parse(s, dtype=str) for s in sheets],
                                ignore_index=True) if sheets else pd.DataFrame(columns=colonnes6)
@@ -543,6 +543,7 @@ def retablissements():
             if c not in df_sav.columns:
                 df_sav[c] = pd.Series(dtype='object')
 
+      
         df_sav['RefContrat']   = df_sav['RefContrat'].astype('string').map(_canon_key_str)
         df_sav['Num_compteur'] = df_sav['Num_compteur'].astype('string').map(_canon_key_str)
         df_sav['total_impaye_facture'] = pd.to_numeric(df_sav['total_impaye_facture'], errors='coerce').round(0).astype('Int64')
@@ -586,7 +587,7 @@ def retablissements():
             to_write['date_insertion'] = _tz_now().strftime('%Y-%m-%d %H:%M:%S')
 
             mode = 'a' if xlsx_path.exists() else 'w'
-            with pd.ExcelWriter(str(xlsx_path), engine='openpyxl', mode=mode) as w:
+            with pd.ExcelWriter(xlsx_path, engine='openpyxl', mode=mode) as w:
                 to_write[colonnes6].to_excel(w, sheet_name=sheet_name, index=False)
 
             flash(f"{nb_nouveaux} nouveau(x) client(s) ajouté(s) dans (secteur {secteur}).", "success")
@@ -594,7 +595,7 @@ def retablissements():
         else:
             if last_lot_num > 0 and xlsx_path.exists():
                 last_sheet   = f"lot {last_lot_num}"
-                table_source = pd.read_excel(str(xlsx_path), sheet_name=last_sheet, dtype=str)
+                table_source = pd.read_excel(xlsx_path, sheet_name=last_sheet, dtype=str)
                 if 'total_impaye_facture' in table_source.columns:
                     table_source['total_impaye_facture'] = pd.to_numeric(
                         table_source['total_impaye_facture'], errors='coerce'
@@ -616,9 +617,9 @@ def retablissements():
             else:
                 table_source = pd.DataFrame(columns=colonnes6)
                 flash("Aucun nouveau client", "info")
-        
+
         if 'total_impaye_facture' in table_source.columns:
-            table_source['total_impaye_facture'] = pd.to_numeric(
+                 table_source['total_impaye_facture'] = pd.to_numeric(
                 table_source['total_impaye_facture'], errors='coerce'
             ).fillna(0).astype(int).map("{:,}".format)
 
@@ -640,10 +641,11 @@ def download_retab_excel():
         src_file = _savebook_path_for_sector(secteur)
 
         if not src_file.exists():
-            flash("Fichier introuvable pour ce secteur. Ouvrez d’abord la page « Clients éligibles ».","warning")
+            flash("Fichierintrouvable pour ce secteur. Ouvrez d’abord la page « Clients éligibles ».","warning")
             return redirect(url_for('retablissements'))
 
-        sheets = pd.read_excel(str(src_file), sheet_name=None, dtype=str)
+
+        sheets = pd.read_excel(src_file, sheet_name=None, dtype=str)
         cleaned = {name: _clean_telephone_col(df.copy()) for name, df in sheets.items()}
 
         buf = BytesIO()
@@ -671,8 +673,9 @@ def download_retab_pdf():
         xlsx_path = _savebook_path_for_sector(secteur)
 
         if xlsx_path.exists():
-            sheets = pd.read_excel(str(xlsx_path), sheet_name=None, dtype=str)
+            sheets = pd.read_excel(xlsx_path, sheet_name=None, dtype=str)
         else:
+
             df, _ = _compute_retablissemements(app)
             df['date_insertion'] = _tz_now().strftime('%Y-%m-%d %H:%M:%S')
             sheets = {'clients_eligibles': df}
@@ -721,8 +724,8 @@ def download_retab_pdf():
         out_pdf = out.fillna('')
         out_pdf['total_impaye_facture'] = out_pdf['total_impaye_facture'].astype('Int64').astype(str).replace('<NA>', '')
 
-        pdf_folder = _savebook_path_for_sector(secteur).parent  # absolu
-        pdf_path = (pdf_folder / "clients_eligibles.pdf").resolve()
+        pdf_folder = _savebook_path_for_sector(secteur).parent
+        pdf_path = pdf_folder / "clients_eligibles.pdf"
 
         styles = getSampleStyleSheet()
         doc = SimpleDocTemplate(
@@ -786,7 +789,7 @@ def paiements_fichiers():
     if request.method == 'POST':
         filenames = request.form.getlist('filenames')
         if not filenames:
-            flash("Aucun fichier sélectionné.", "info")
+            flash("Aucun fichier sélectionné." ,"info")
             return redirect(url_for('paiements_fichiers'))
 
         deleted, skipped = [], []
@@ -806,9 +809,9 @@ def paiements_fichiers():
                 skipped.append(f"{safe_name} (err: {e})")
 
         if deleted:
-            flash(f"Supprimés : {', '.join(deleted)}", "info")
+            flash(f"Supprimés : {', '.join(deleted)}" ,"info")
         if skipped:
-            flash(f"Non supprimés : {', '.join(skipped)}", "info")
+            flash(f"Non supprimés : {', '.join(skipped)}" ,"info")
 
         return redirect(url_for('paiements_fichiers'))
 
@@ -869,6 +872,7 @@ def lister_sauvegardes():
 @app.route('/sauvegardes/telecharger/<path:nom_fichier>', methods=['GET'])
 def telecharger_sauvegarde(nom_fichier: str):
     try:
+       
         base = _dossier_sauvegarde()
         chemin = (base / nom_fichier).resolve()
         if base not in chemin.parents and chemin != base:
@@ -901,10 +905,17 @@ def supprimer_sauvegarde():
 # ----------- Déconnexion -----------
 @app.route('/logout', methods=['GET'])
 def logout():
-    session.clear()
+    session.clear()  
     flash("Vous êtes déconnecté.", "info")
-    return redirect(url_for('choisir_secteur'))
+    return redirect(url_for('choisir_secteur'))  
 
 # -------------------------------------------------------
 if __name__ == '__main__':
     app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5003)
+
+
+
+
+ 
+
+
