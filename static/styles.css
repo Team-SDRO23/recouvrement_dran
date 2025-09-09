@@ -123,9 +123,17 @@ button {
 }
 .toggle-eye:hover{ opacity: 1; }
 
-/* === Accessoires === */
+
 .form-floating > label { color: #2b2b2b; }
 .text-white-50 { color: rgba(255,255,255,.75) !important; }
 
 
+.alert {
+  transition: opacity 1s ease;
+}
+
+
+.fade-out {
+  opacity: 0 !important;
+}
 
