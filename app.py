@@ -3,7 +3,7 @@ from flask import (
     send_file, send_from_directory
 )
 from werkzeug.utils import secure_filename
-from werkzeug.middleware.proxy_fix import ProxyFix
+# from werkzeug.middleware.proxy_fix import ProxyFix
 import os, io, csv, re
 from io import BytesIO, StringIO
 import numpy as np
@@ -44,13 +44,13 @@ Path(app.config['SAVEPAYMENT_FOLDER']).mkdir(parents=True, exist_ok=True)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
-app.config.update(
-    PREFERRED_URL_SCHEME='https',      # tu sers en HTTPS côté front
-    SESSION_COOKIE_SECURE=True,        # cookie secure (reco en prod)
-    SESSION_COOKIE_SAMESITE='Lax',     # défaut sûr pour navigation
-    # SESSION_COOKIE_DOMAIN='dran.dxteriz.com',  # pas nécessaire sauf sous-domaines
-)
+# app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+# app.config.update(
+#     PREFERRED_URL_SCHEME='https',      # tu sers en HTTPS côté front
+#     SESSION_COOKIE_SECURE=True,        # cookie secure (reco en prod)
+#     SESSION_COOKIE_SAMESITE='Lax',     # défaut sûr pour navigation
+#     # SESSION_COOKIE_DOMAIN='dran.dxteriz.com',  # pas nécessaire sauf sous-domaines
+# )
 
 db = SQLAlchemy(app)
 
@@ -58,14 +58,14 @@ db = SQLAlchemy(app)
 # -------------------------------------------------------
 # Outils Débogage
 # -------------------------------------------------------
-@app.before_request
-def _dbg_session():
-    try:
-        print("Cookie header:", request.headers.get('Cookie'))
-        print("Flask session keys:", list(session.keys()))
-        print("secteur in session? ", 'secteur' in session)
-    except Exception as e:
-        print("DBG error:", e)
+# @app.before_request
+# def _dbg_session():
+#     try:
+#         print("Cookie header:", request.headers.get('Cookie'))
+#         print("Flask session keys:", list(session.keys()))
+#         print("secteur in session? ", 'secteur' in session)
+#     except Exception as e:
+#         print("DBG error:", e)
 
 
 # -------------------------------------------------------

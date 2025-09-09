@@ -46,11 +46,14 @@
     
   }
   footer { background: #f1f5f9; }
+  .alert.fade { transition: opacity .1s ease-in-out; }
 
+  .alert.fade-out { opacity: 0; }
   </style>
   {% block head %}{% endblock %}
 </head>
-<body class="d-flex flex-column min-vh-100"></body>>
+<body class="d-flex flex-column min-vh-100">
+
   <nav class="navbar navbar-expand-lg fixed-top">
     <div class="container">
       <i class="ri-flashlight-line"  style="color:#fff;"></i>
@@ -73,7 +76,7 @@
 <li class="nav-item">
   <a class="nav-link {% if request.endpoint and request.endpoint.endswith('upload_liste_payement') %}active{% endif %}"
      href="{{ url_for('upload_liste_payement') }}">
-    Payement
+    Paiement
   </a>
 </li>
 
@@ -124,33 +127,38 @@
           crossorigin="anonymous"></script>
 <script>
   (function () {
-    const AUTO_CLOSE_MS = 7000;
+    const AUTO_CLOSE_MS = 7000; 
+    const FADE_MS = 800;      
 
-    function autoCloseAlerts() {
-      const alerts = document.querySelectorAll('.alert');
-      alerts.forEach((el) => {
-        setTimeout(() => {
-         
+    function autoFadeAlerts() {
+      document.querySelectorAll('.alert').forEach((el) => {
+      
+        const cancel = () => {
+          clearTimeout(startTimer);
+          clearTimeout(closeTimer);
+        };
+        el.addEventListener('close.bs.alert', cancel, { once: true });
+
+        // Lance le fondu après AUTO_CLOSE_MS
+        const startTimer = setTimeout(() => {
           el.classList.add('fade-out');
 
-          setTimeout(() => {
-            if (window.bootstrap && bootstrap.Alert) {
-              bootstrap.Alert.getOrCreateInstance(el).close();
-            } else {
-              el.remove();
-            }
-          }, 1000);
+          var closeTimer = setTimeout(() => {
+            try { bootstrap.Alert.getOrCreateInstance(el).close(); }
+            catch(e){ el.remove(); }
+          }, FADE_MS);
         }, AUTO_CLOSE_MS);
       });
     }
 
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', autoCloseAlerts);
+      document.addEventListener('DOMContentLoaded', autoFadeAlerts);
     } else {
-      autoCloseAlerts();
+      autoFadeAlerts();
     }
   })();
 </script>
+
 
 
   {% block scripts %}{% endblock %}
