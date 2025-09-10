@@ -36,7 +36,8 @@ app.secret_key = 'secret_key'
 
 
 
-BASE_DIR = Path(app.root_path).resolve() 
+BASE_DIR = Path(__file__).resolve().parent
+
 app.config['UPLOAD_FOLDER']      = str(BASE_DIR / 'impayefacture')
 app.config['PAYMENT_FOLDER']     = str(BASE_DIR / 'payementfacture')
 app.config['SAVEPAYMENT_FOLDER'] = str(BASE_DIR / 'sauvegardepayement')
@@ -56,7 +57,10 @@ app.config.update(
     SESSION_COOKIE_SAMESITE='Lax',     # défaut sûr pour navigation
     # SESSION_COOKIE_DOMAIN='dran.dxteriz.com',  # pas nécessaire sauf sous-domaines
 )
+if app.debug or os.environ.get("FLASK_ENV") == "development":
+    app.config['SESSION_COOKIE_SECURE'] = False
 
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 db = SQLAlchemy(app)
 
 
@@ -235,9 +239,11 @@ def upload_liste_impaye():
             # Lecture tolérante sans présumer d’entêtes
             if ext == '.csv':
                 df0 = pd.read_csv(bio, header=None, dtype=object)
-            else:
-                # xlrd requis pour vieux .xls ; openpyxl pour .xlsx
-                df0 = pd.read_excel(bio, sheet_name=0, header=None, dtype=object)
+            elif ext == '.xlsx':
+                df0 = pd.read_excel(bio, sheet_name=0, header=None, dtype=object, engine='openpyxl')
+            else:  # '.xls'
+                df0 = pd.read_excel(bio, sheet_name=0, header=None, dtype=object, engine='xlrd')
+
 
             # 3) Détection de la ligne d’entête
             required = ['Matricule AZ', 'Nom AZ', 'Tournee', 'Genre client']
