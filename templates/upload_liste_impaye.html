@@ -29,7 +29,7 @@
         {% endwith %}
 
         <!-- Formulaire upload -->
-        <form method="POST" enctype="multipart/form-data" onsubmit="showSpinner(this)">
+        <form action="{{ url_for('upload_liste_impaye') }}" method="POST" enctype="multipart/form-data" onsubmit="showSpinner(this)">
           <div class="mb-3">
             <label class="form-label">Sélectionnez un fichier Excel ou CSV</label>
             <input class="form-control"

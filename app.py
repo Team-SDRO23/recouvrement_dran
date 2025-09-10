@@ -1,9 +1,9 @@
 from flask import (
-    Flask, render_template, request, redirect, url_for, session, flash,
+    Flask, render_template, request, redirect, url_for, session, flash, make_response,
     send_file, send_from_directory
 )
 from werkzeug.utils import secure_filename
-# from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.middleware.proxy_fix import ProxyFix
 import os, io, csv, re
 from io import BytesIO, StringIO
 import numpy as np
@@ -24,6 +24,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from zoneinfo import ZoneInfo
+from time import time
 
 # -------------------------------------------------------
 # Config
@@ -44,13 +45,13 @@ Path(app.config['SAVEPAYMENT_FOLDER']).mkdir(parents=True, exist_ok=True)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
-# app.config.update(
-#     PREFERRED_URL_SCHEME='https',      # tu sers en HTTPS côté front
-#     SESSION_COOKIE_SECURE=True,        # cookie secure (reco en prod)
-#     SESSION_COOKIE_SAMESITE='Lax',     # défaut sûr pour navigation
-#     # SESSION_COOKIE_DOMAIN='dran.dxteriz.com',  # pas nécessaire sauf sous-domaines
-# )
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+app.config.update(
+    PREFERRED_URL_SCHEME='https',      # tu sers en HTTPS côté front
+    SESSION_COOKIE_SECURE=True,        # cookie secure (reco en prod)
+    SESSION_COOKIE_SAMESITE='Lax',     # défaut sûr pour navigation
+    # SESSION_COOKIE_DOMAIN='dran.dxteriz.com',  # pas nécessaire sauf sous-domaines
+)
 
 db = SQLAlchemy(app)
 
@@ -58,15 +59,37 @@ db = SQLAlchemy(app)
 # -------------------------------------------------------
 # Outils Débogage
 # -------------------------------------------------------
-# @app.before_request
-# def _dbg_session():
-#     try:
-#         print("Cookie header:", request.headers.get('Cookie'))
-#         print("Flask session keys:", list(session.keys()))
-#         print("secteur in session? ", 'secteur' in session)
-#     except Exception as e:
-#         print("DBG error:", e)
+@app.before_request
+def _dbg_session():
+    try:
+        print("Cookie header:", request.headers.get('Cookie'))
+        print("Flask session keys:", list(session.keys()))
+        print("secteur in session? ", 'secteur' in session)
+    except Exception as e:
+        print("DBG error:", e)
 
+@app.after_request
+def _log_redirects(resp):
+    try:
+        if 300 <= resp.status_code < 400:
+            print(f">> AFTER_REQUEST redirect {request.method} {request.path} "
+                  f"→ {resp.status_code} Location={resp.headers.get('Location')}")
+    finally:
+        return resp
+
+@app.before_request
+def _dbg_route():
+    print(f">> BEFORE_REQUEST {request.method} {request.path} Cookie?={'session' in (request.headers.get('Cookie') or '')}")
+
+def _no_store(resp):
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Vary'] = 'Cookie'
+    return resp
+
+def _see_other(endpoint, **values):
+    # 303 See Other pour un PRG propre
+    return redirect(url_for(endpoint, **values), code=303)
 
 # -------------------------------------------------------
 # Outils Secteur
@@ -179,46 +202,47 @@ def find_header_row(df0, required_labels=None, min_match=3):
     non_na_counts = df0.notna().sum(axis=1)
     return int(non_na_counts.idxmax())
 
-# Upload fichiers
+
 
 @app.route('/upload_liste_impaye', methods=['GET', 'POST'])
 @_require_secteur
 def upload_liste_impaye():
-    preview_html = None
-    orig_filename = None
     secteur = _active_secteur()
 
+    # ----------------------- POST: traitement & sauvegarde -----------------------
     if request.method == 'POST':
         file = request.files.get('file')
-        if not file or not file.filename:
-            flash("Veuillez choisir un fichier." ,"info")
-            return render_template('upload_liste_impaye.html')
+        if not file or not getattr(file, 'filename', ''):
+            flash("Veuillez choisir un fichier.", "warning")
+            return _no_store(_see_other('upload_liste_impaye', t=int(time())))
 
-        ext = file.filename.lower().rsplit('.', 1)[-1]
+        orig_filename = secure_filename(file.filename)
+        ext = orig_filename.rsplit('.', 1)[-1].lower() if '.' in orig_filename else ''
         if ext not in ('xlsx', 'xls', 'csv'):
-            flash("Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV." ,"info")
-            return render_template('upload_liste_impaye.html')
+            flash("Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV.", "warning")
+            return _no_store(_see_other('upload_liste_impaye', t=int(time())))
 
         try:
-            orig_filename = secure_filename(file.filename)
             raw = file.read()
             bio = BytesIO(raw)
 
+            # Lecture tolérante (sans présumer un header)
             if ext == 'csv':
                 df0 = pd.read_csv(bio, header=None, dtype=object)
             else:
                 df0 = pd.read_excel(bio, sheet_name=0, header=None, dtype=object)
 
-            required = ['Matricule AZ', 'Nom AZ', 'Tournee','Genre client']
+          
+            required = ['Matricule AZ', 'Nom AZ', 'Tournee', 'Genre client']
             header_row = find_header_row(df0, required_labels=required, min_match=3)
 
             header = [str(x).strip() if pd.notna(x) else "" for x in df0.iloc[header_row].tolist()]
-            df = df0.iloc[header_row+1:].copy()
+            df = df0.iloc[header_row + 1:].copy()
             df.columns = header
 
+            
             df = df.replace(r'^\s*$', pd.NA, regex=True)
 
-         
             colnames = list(df.columns)
             mask_bad = np.array([
                 (c is None) or (str(c).strip() == "") or str(c).lower().startswith("unnamed")
@@ -226,40 +250,77 @@ def upload_liste_impaye():
             ], dtype=bool)
             if mask_bad.any():
                 df = df.iloc[:, ~mask_bad]
+
             df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')
             df.columns = [str(c).strip() for c in df.columns]
             df = df.loc[:, ~pd.Index(df.columns).duplicated()]
 
            
-            save_path = _impaye_path_for_sector(secteur)
+            save_path: Path = _impaye_path_for_sector(secteur) 
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+           
             df.to_excel(save_path, index=False)
 
-            # aperçu
-            df_preview = df.iloc[:, :5].head(10).fillna("")
-            preview_html = df_preview.to_html(
-                classes="table table-sm table-striped table-bordered align-middle",
-                index=False, border=0, escape=False
-            )
+            
+            flash(f"Fichier d’impayés « {orig_filename} » enregistré pour le secteur « {secteur} ».", "success")
 
-            flash(f"Fichier d’impayés enregistré pour le secteur « {secteur} »." ,"info")
+            return _no_store(_see_other('upload_liste_impaye', t=int(time()), orig=orig_filename))
+
         except Exception as e:
             flash(f"Erreur lors du traitement du fichier : {e}", "danger")
+            return _no_store(_see_other('upload_liste_impaye', t=int(time())))
 
-    return render_template('upload_liste_impaye.html',
-                           preview_html=preview_html,
-                           orig_filename=orig_filename)
+    preview_html = None
+    orig_filename = request.args.get('orig')  
 
+    try:
+        save_path: Path = _impaye_path_for_sector(secteur)
+        if save_path.exists():
+
+            xls = pd.ExcelFile(save_path)
+            df = xls.parse(xls.sheet_names[0], dtype=object) if xls.sheet_names else pd.DataFrame()
+
+            if not df.empty:
+                df_preview = df.iloc[:10, :5].fillna("")
+                preview_html = df_preview.to_html(
+                    classes="table table-sm table-striped table-bordered align-middle",
+                    index=False, border=0, escape=False
+                )
+              
+                if not orig_filename:
+                    orig_filename = save_path.name
+    except Exception:
+
+        preview_html = None
+
+    resp = make_response(render_template(
+        'upload_liste_impaye.html',
+        preview_html=preview_html,
+        orig_filename=orig_filename
+    ), 200)
+    return _no_store(resp)
+
+# imports à vérifier
+import os, csv
+from io import BytesIO, StringIO
+from pathlib import Path
+
+import pandas as pd
+from werkzeug.utils import secure_filename
+from flask import request, render_template, flash
 
 @app.route('/upload_liste_payement', methods=['GET','POST'])
 def upload_liste_payement():
-    """Fichiers de paiements partagés (communs à tous les secteurs)."""
+    """Fichiers de paiements partagés (communs à tous les secteurs).
+       LOGIQUE CONSERVÉE : pas de PRG, pas de renommage, on sauvegarde sous le nom reçu.
+    """
     data_preview_html, uploaded_names = None, []
     added_rows, duplicates_removed = 0, 0
 
     if request.method == 'POST':
         file = request.files.get('file') or (request.files.getlist('files') or [None])[0]
         if not file:
-            flash("Veuillez choisir un fichier (.xlsx, .xls ou .csv)." ,"info")
+            flash("Veuillez choisir un fichier (.xlsx, .xls ou .csv).", "info")
             return render_template('upload_liste_payement.html',
                                    data_preview_html=None, uploaded_names=None,
                                    added_rows=0, duplicates_removed=0)
@@ -267,7 +328,7 @@ def upload_liste_payement():
         filename = secure_filename(file.filename or "")
         ext = Path(filename).suffix.lower()
         if ext not in ('.xlsx', '.xls', '.csv'):
-            flash("Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV (.csv)." ,"info")
+            flash("Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV (.csv).", "info")
             return render_template('upload_liste_payement.html',
                                    data_preview_html=None, uploaded_names=None,
                                    added_rows=0, duplicates_removed=0)
@@ -275,6 +336,7 @@ def upload_liste_payement():
             required = {'RefContrat','DateCreation','DateReglement','Secteurs'}
             raw = file.read()
 
+            # --- Lecture tolérante + détection d'entête (identique à l'esprit original) ---
             if ext in ('.xlsx', '.xls'):
                 df0 = pd.read_excel(BytesIO(raw), sheet_name=0, header=None, dtype=object)
                 header_row = None
@@ -288,8 +350,9 @@ def upload_liste_payement():
                     df = df.astype(str)
                 else:
                     df = pd.read_excel(BytesIO(raw), sheet_name=0, dtype=str, keep_default_na=False)
-                saver = 'excel'
-            else:
+                saver = ('excel', None, None)
+
+            else:  # CSV
                 text, enc_used = None, None
                 for enc in ('utf-8-sig','utf-8','cp1252','latin-1'):
                     try:
@@ -298,12 +361,14 @@ def upload_liste_payement():
                         continue
                 if text is None:
                     text = raw.decode('utf-8', errors='replace'); enc_used = 'utf-8'
+
                 sample = text[:10000]
                 try:
                     dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
                     sep = dialect.delimiter
                 except Exception:
                     sep = ','
+
                 df0 = pd.read_csv(StringIO(text), header=None, dtype=object, sep=sep, engine='python')
                 header_row = None
                 for i in range(min(len(df0), 30)):
@@ -317,27 +382,35 @@ def upload_liste_payement():
                     df = pd.read_csv(StringIO(text), dtype=str, keep_default_na=False, sep=sep, engine='python')
                 saver = ('csv', sep, enc_used)
 
+            # --- Normalisation légère (trim colonnes + cellules, comme avant) ---
             df.rename(columns=lambda c: str(c).strip(), inplace=True)
             for col in required:
                 if col in df.columns: df[col] = df[col].astype(str)
             df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
 
+            # --- Aperçu (10 x 15) ---
             preview_df = df.iloc[:10, :15].copy()
             data_preview_html = preview_df.to_html(classes='table table-sm table-striped',
                                                    index=False, border=0)
 
-            payment_folder = app.config['PAYMENT_FOLDER']
+            # --- Sauvegarde DISQUE (même nom — donc écrasement possible si déjà présent) ---
+            payment_folder = app.config.get('PAYMENT_FOLDER')
+            if not payment_folder:
+                raise RuntimeError("CONFIG: PAYMENT_FOLDER manquant dans app.config.")
             Path(payment_folder).mkdir(parents=True, exist_ok=True)
             save_path = os.path.join(payment_folder, filename)
-            if saver == 'excel':
+
+            kind, sep, enc = saver
+            if kind == 'excel':
                 df.to_excel(save_path, index=False)
             else:
-                _, sep, enc = saver
                 enc_out = 'utf-8-sig' if enc and enc.startswith('utf-8') else (enc or 'utf-8-sig')
                 df.to_csv(save_path, index=False, sep=sep, encoding=enc_out)
 
-            uploaded_names = [filename]; added_rows = len(df)
+            uploaded_names = [filename]
+            added_rows = len(df)
             flash(f"Fichier de paiements enregistré ({filename}, {added_rows} lignes).", "success")
+
         except Exception as e:
             flash(f'Erreur lors du traitement : {e}', "danger")
 
@@ -789,35 +862,47 @@ def paiements_fichiers():
     if request.method == 'POST':
         filenames = request.form.getlist('filenames')
         if not filenames:
-            flash("Aucun fichier sélectionné." ,"info")
-            return redirect(url_for('paiements_fichiers'))
+            flash("Aucun fichier sélectionné.", "info")
+            # PRG : 303 vers GET (URL unique avec t=… pour éviter tout replay de cache)
+            return _no_store(_see_other('paiements_fichiers', t=int(time())))
 
         deleted, skipped = [], []
         for filename in filenames:
             safe_name = os.path.basename(filename).strip()
             candidate = (payment_dir / safe_name).resolve()
+
+            # garde anti-traversal
             if payment_dir not in candidate.parents and candidate != payment_dir:
-                skipped.append(safe_name); continue
+                skipped.append(safe_name)
+                continue
+
+            # whitelist d’extensions
             if candidate.suffix.lower() not in ALLOWED_PAYMENT_EXTS:
-                skipped.append(safe_name); continue
+                skipped.append(safe_name)
+                continue
+
             try:
                 if candidate.exists() and candidate.is_file():
-                    candidate.unlink(); deleted.append(safe_name)
+                    candidate.unlink()
+                    deleted.append(safe_name)
                 else:
                     skipped.append(safe_name)
             except Exception as e:
                 skipped.append(f"{safe_name} (err: {e})")
 
         if deleted:
-            flash(f"Supprimés : {', '.join(deleted)}" ,"info")
+            flash(f"Supprimés : {', '.join(deleted)}", "success")
         if skipped:
-            flash(f"Non supprimés : {', '.join(skipped)}" ,"info")
+            flash(f"Non supprimés : {', '.join(skipped)}", "warning")
 
-        return redirect(url_for('paiements_fichiers'))
+        # PRG : retour 303 vers GET
+        return _no_store(_see_other('paiements_fichiers', t=int(time())))
 
+    # -------- GET : unique rendu du template (pas de redirection ici) --------
     files = _list_payment_files()
-    return render_template('paiements_fichiers.html', files=files)
 
+    resp = make_response(render_template('paiements_fichiers.html', files=files), 200)
+    return _no_store(resp)
 
 def nettoyer_sauvegardes():
     root = Path(app.config['SAVEPAYMENT_FOLDER']).resolve()
