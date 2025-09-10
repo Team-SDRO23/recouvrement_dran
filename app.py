@@ -29,7 +29,7 @@ from time import time
 # -------------------------------------------------------
 # Config
 # -------------------------------------------------------
-ALLOWED_PAYMENT_EXTS = {'.xlsx', '.xls', '.csv'}
+ALLOWED_PAYMENT_EXTS = {'xlsx', 'xls', 'csv'}
 
 app = Flask(__name__)
 app.secret_key = 'secret_key'
