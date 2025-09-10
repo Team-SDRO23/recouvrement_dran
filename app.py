@@ -207,32 +207,35 @@ def find_header_row(df0, required_labels=None, min_match=3):
 @app.route('/upload_liste_impaye', methods=['GET', 'POST'])
 @_require_secteur
 def upload_liste_impaye():
+    """Upload/parse/sauvegarde d’un fichier impayés (xls/xlsx/csv) + aperçu."""
     secteur = _active_secteur()
 
-    # ----------------------- POST: traitement & sauvegarde -----------------------
     if request.method == 'POST':
-        file = request.files.get('file')
-        if not file or not getattr(file, 'filename', ''):
+        # 1) Récup fichier
+        f = request.files.get('file')  # <-- DOIT matcher name="file" dans le HTML
+        if not f or not getattr(f, 'filename', ''):
             flash("Veuillez choisir un fichier.", "warning")
             return _no_store(_see_other('upload_liste_impaye', t=int(time())))
 
-        orig_filename = secure_filename(file.filename)
-        ext = orig_filename.rsplit('.', 1)[-1].lower() if '.' in orig_filename else ''
-        if ext not in ('xlsx', 'xls', 'csv'):
+        orig_filename = secure_filename(f.filename)
+        ext = ('.' + orig_filename.rsplit('.', 1)[-1]).lower() if '.' in orig_filename else ''
+        if ext not in ('.xlsx', '.xls', '.csv'):
             flash("Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV.", "warning")
             return _no_store(_see_other('upload_liste_impaye', t=int(time())))
 
         try:
-            raw = file.read()
+            # 2) Lire dans un buffer mémoire
+            raw = f.read()
             bio = BytesIO(raw)
 
-            # Lecture tolérante (sans présumer un header)
-            if ext == 'csv':
+            # Lecture tolérante sans présumer d’entêtes
+            if ext == '.csv':
                 df0 = pd.read_csv(bio, header=None, dtype=object)
             else:
+                # xlrd requis pour vieux .xls ; openpyxl pour .xlsx
                 df0 = pd.read_excel(bio, sheet_name=0, header=None, dtype=object)
 
-          
+            # 3) Détection de la ligne d’entête
             required = ['Matricule AZ', 'Nom AZ', 'Tournee', 'Genre client']
             header_row = find_header_row(df0, required_labels=required, min_match=3)
 
@@ -240,14 +243,12 @@ def upload_liste_impaye():
             df = df0.iloc[header_row + 1:].copy()
             df.columns = header
 
-            
+            # 4) Nettoyage colonnes/vides/doublons
             df = df.replace(r'^\s*$', pd.NA, regex=True)
-
+            # supprime colonnes sans nom / Unnamed
             colnames = list(df.columns)
-            mask_bad = np.array([
-                (c is None) or (str(c).strip() == "") or str(c).lower().startswith("unnamed")
-                for c in colnames
-            ], dtype=bool)
+            mask_bad = np.array([(c is None) or (str(c).strip() == "") or str(c).lower().startswith("unnamed")
+                                 for c in colnames], dtype=bool)
             if mask_bad.any():
                 df = df.iloc[:, ~mask_bad]
 
@@ -255,30 +256,39 @@ def upload_liste_impaye():
             df.columns = [str(c).strip() for c in df.columns]
             df = df.loc[:, ~pd.Index(df.columns).duplicated()]
 
-           
-            save_path: Path = _impaye_path_for_sector(secteur) 
+            # 5) Sauvegarde normalisée en .xlsx (toujours) pour cohérence de lecture ultérieure
+            save_path: Path = _impaye_path_for_sector(secteur)
+            if save_path.suffix.lower() not in ('.xlsx', '.xls'):
+                save_path = save_path.with_suffix('.xlsx')
             save_path.parent.mkdir(parents=True, exist_ok=True)
-           
-            df.to_excel(save_path, index=False)
 
-            
+            # openpyxl recommandé pour .xlsx
+            try:
+                df.to_excel(save_path, index=False, engine='openpyxl')
+            except TypeError:
+                # fallback si la signature engine= n’est pas supportée
+                df.to_excel(save_path, index=False)
+
             flash(f"Fichier d’impayés « {orig_filename} » enregistré pour le secteur « {secteur} ».", "success")
-
+            # Redirige en GET pour afficher l’aperçu + nom du fichier
             return _no_store(_see_other('upload_liste_impaye', t=int(time()), orig=orig_filename))
 
         except Exception as e:
             flash(f"Erreur lors du traitement du fichier : {e}", "danger")
             return _no_store(_see_other('upload_liste_impaye', t=int(time())))
 
+    # ----------- GET : affichage page + aperçu si fichier déjà enregistré ----------
     preview_html = None
-    orig_filename = request.args.get('orig')  
+    orig_filename = request.args.get('orig')
 
     try:
         save_path: Path = _impaye_path_for_sector(secteur)
         if save_path.exists():
-
-            xls = pd.ExcelFile(save_path)
-            df = xls.parse(xls.sheet_names[0], dtype=object) if xls.sheet_names else pd.DataFrame()
+            if save_path.suffix.lower() == '.csv':
+                df = pd.read_csv(save_path, dtype=object)
+            else:
+                xls = pd.ExcelFile(save_path)
+                df = xls.parse(xls.sheet_names[0], dtype=object) if xls.sheet_names else pd.DataFrame()
 
             if not df.empty:
                 df_preview = df.iloc[:10, :5].fillna("")
@@ -286,11 +296,9 @@ def upload_liste_impaye():
                     classes="table table-sm table-striped table-bordered align-middle",
                     index=False, border=0, escape=False
                 )
-              
                 if not orig_filename:
                     orig_filename = save_path.name
     except Exception:
-
         preview_html = None
 
     resp = make_response(render_template(
@@ -300,14 +308,7 @@ def upload_liste_impaye():
     ), 200)
     return _no_store(resp)
 
-# imports à vérifier
-import os, csv
-from io import BytesIO, StringIO
-from pathlib import Path
 
-import pandas as pd
-from werkzeug.utils import secure_filename
-from flask import request, render_template, flash
 
 @app.route('/upload_liste_payement', methods=['GET','POST'])
 def upload_liste_payement():

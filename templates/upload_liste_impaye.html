@@ -1,72 +1,77 @@
 {% extends 'base.html' %}
 {% block title %}Insertion — Factures impayées{% endblock %}
-{% block content %}
-</br></br></br></br>
 
-<div class="row g-4">
-  <div class="col-12 col-lg-8 mx-auto">
-    <div class="card">
-      <div class="card-body p-4 p-lg-5">
-        <div class="d-flex align-items-center mb-3">
-          <div class="me-3 rounded-circle d-inline-flex align-items-center justify-content-center"
-               style="width:40px;height:40px;background:rgba(255,140,0,.12);">
-            📄
-          </div>
-          <div>
+{% block content %}
+<div class="container py-4">
+  <div class="row g-4">
+    <div class="col-12 col-lg-8 mx-auto">
+      <div class="card">
+        <div class="card-body p-4 p-lg-5">
+
+          <div class="d-flex align-items-center mb-3">
+            <div class="me-3 rounded-circle d-inline-flex align-items-center justify-content-center"
+                 style="width:40px;height:40px;background:rgba(255,140,0,.12);">
+              📄
+            </div>
             <h1 class="h4 mb-0">Insertion du fichier des impayés</h1>
           </div>
-        </div>
 
-        <!-- Messages flash -->
-        {% with messages = get_flashed_messages() %}
-          {% if messages %}
-            <div class="alert alert-info" role="alert">
-              {% for message in messages %}
-                <div>{{ message }}</div>
+          <!-- Messages flash (avec catégories) -->
+          {% with messages = get_flashed_messages(with_categories=True) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <div class="alert alert-{{ 'info' if category=='message' else category }} mb-2" role="alert">
+                  {{ message }}
+                </div>
               {% endfor %}
+            {% endif %}
+          {% endwith %}
+
+          <!-- Formulaire upload -->
+          <form action="{{ url_for('upload_liste_impaye') }}"
+                method="POST"
+                enctype="multipart/form-data"
+                onsubmit="showSpinner(this)">
+
+            <div class="mb-3">
+              <label class="form-label">Sélectionnez un fichier Excel ou CSV</label>
+              <input class="form-control"
+                     type="file"
+                     name="file"  <!-- DOIT matcher request.files.get('file') -->
+                     accept=".xlsx,.xls,.csv"
+                     required
+                     onchange="updateFileName(this,'uploadName')">
+            </div>
+
+            <div class="d-flex align-items-center mb-2">
+              <button type="submit" class="btn btn-primary me-3" id="submitBtn">
+                Enregistrer
+              </button>
+              <span id="uploadName" class="text-muted small"></span>
+            </div>
+
+            {% if orig_filename %}
+              <div class="text-muted small mb-2">
+                Fichier chargé : <strong>{{ orig_filename }}</strong>
+              </div>
+            {% endif %}
+          </form>
+
+          <hr class="my-4">
+
+          <!-- Aperçu -->
+          {% if preview_html %}
+            <h2 class="h6">Aperçu (10 lignes × 5 colonnes)</h2>
+            <div class="table-responsive">
+              {{ preview_html|safe }}
+            </div>
+          {% else %}
+            <div class="small text-muted">
+              Sélectionnez et chargez un fichier pour afficher un aperçu ici.
             </div>
           {% endif %}
-        {% endwith %}
 
-        <!-- Formulaire upload -->
-        <form action="{{ url_for('upload_liste_impaye') }}" method="POST" enctype="multipart/form-data" onsubmit="showSpinner(this)">
-          <div class="mb-3">
-            <label class="form-label">Sélectionnez un fichier Excel ou CSV</label>
-            <input class="form-control"
-                   type="file"
-                   name="file"
-                   accept=".xlsx,.xls,.csv"
-                   required
-                   onchange="updateFileName(this,'uploadName')">
-          </div>
-
-          <div class="d-flex align-items-center mb-2">
-            <button type="submit" class="btn btn-brand me-3" id="submitBtn">
-              Enregistrer
-            </button>
-            <span id="uploadName" class="text-muted"></span>
-          </div>
-
-          {% if orig_filename %}
-            <div class="text-muted small mb-2">
-              Fichier chargé : <strong>{{ orig_filename }}</strong>
-            </div>
-          {% endif %}
-        </form>
-
-        <hr class="my-4">
-
-        <!-- Aperçu -->
-        {% if preview_html %}
-          <h2 class="h6">Aperçu (colonnes sélectionnées)</h2>
-          <div class="table-responsive">
-            {{ preview_html|safe }}
-          </div>
-        {% else %}
-          <div class="small text-muted">
-            Sélectionnez et chargez un fichier pour afficher un aperçu ici.
-          </div>
-        {% endif %}
+        </div>
       </div>
     </div>
   </div>
