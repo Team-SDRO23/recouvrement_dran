@@ -221,8 +221,12 @@ def upload_liste_impaye():
     if request.method == 'POST':
         # 1) Récup fichier
         f = request.files.get('file')  # <-- DOIT matcher name="file" dans le HTML
+
+        if not f:
+            lst = request.files.getlist('files')
+            f = lst[0] if lst else None
         if not f or not getattr(f, 'filename', ''):
-            flash("Veuillez choisir un fichier.", "warning")
+            flash("Veuillez choisir un fichier (.xlsx, .xls ou .csv).", "warning")
             return _no_store(_see_other('upload_liste_impaye', t=int(time())))
 
         orig_filename = secure_filename(f.filename)
