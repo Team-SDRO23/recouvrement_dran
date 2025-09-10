@@ -988,6 +988,48 @@ def supprimer_sauvegarde():
     return redirect(url_for('lister_sauvegardes'))
 
 
+@app.route('/diag_fs')
+def diag_fs():
+    import os, getpass, platform
+    from pathlib import Path
+    import traceback
+    try:
+        uid = getattr(os, "geteuid", lambda: "N/A")()
+        user = getpass.getuser()
+    except Exception:
+        uid, user = "N/A", "N/A"
+
+    dirs = {
+        "PAYMENT_FOLDER": Path(app.config.get("PAYMENT_FOLDER", "")),
+        "DATA_DIR": Path(app.config.get("DATA_DIR", "")),
+        "instance_path": Path(app.instance_path),
+    }
+    report = {
+        "platform": platform.platform(),
+        "process_user": {"uid": str(uid), "name": user},
+        "dirs": {},
+    }
+
+    for key, path in dirs.items():
+        info = {"path": str(path.resolve()), "exists": path.exists()}
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            info["w_ok"] = os.access(path, os.W_OK)
+            info["x_ok"] = os.access(path, os.X_OK)
+            # test write/delete
+            test = path / ".__write_test__.txt"
+            test.write_text("ok", encoding="utf-8")
+            info["write"] = "ok"
+            test.unlink()
+            info["delete"] = "ok"
+        except Exception as e:
+            info["error"] = f"{type(e).__name__}: {e}"
+            info["trace"] = traceback.format_exc().splitlines()[-1]
+        report["dirs"][key] = info
+
+    return report, 200
+
+
 # ----------- Déconnexion -----------
 @app.route('/logout', methods=['GET'])
 def logout():
