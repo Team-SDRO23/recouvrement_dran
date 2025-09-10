@@ -34,13 +34,17 @@ ALLOWED_PAYMENT_EXTS = {'.xlsx', '.xls', '.csv'}
 app = Flask(__name__)
 app.secret_key = 'secret_key'
 
-app.config['UPLOAD_FOLDER']      = 'impayefacture'        
-app.config['PAYMENT_FOLDER']     = 'payementfacture'      
-app.config['SAVEPAYMENT_FOLDER'] = 'sauvegardepayement' 
+
+
+BASE_DIR = Path(app.root_path).resolve() 
+app.config['UPLOAD_FOLDER']      = str(BASE_DIR / 'impayefacture')
+app.config['PAYMENT_FOLDER']     = str(BASE_DIR / 'payementfacture')
+app.config['SAVEPAYMENT_FOLDER'] = str(BASE_DIR / 'sauvegardepayement')
 
 Path(app.config['UPLOAD_FOLDER']).mkdir(parents=True, exist_ok=True)
 Path(app.config['PAYMENT_FOLDER']).mkdir(parents=True, exist_ok=True)
 Path(app.config['SAVEPAYMENT_FOLDER']).mkdir(parents=True, exist_ok=True)
+
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
