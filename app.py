@@ -29,7 +29,7 @@ from time import time
 # -------------------------------------------------------
 # Config
 # -------------------------------------------------------
-ALLOWED_PAYMENT_EXTS = {'xlsx', 'xls', 'csv'}
+ALLOWED_PAYMENT_EXTS = {'.xlsx', '.xls', '.csv'}
 
 app = Flask(__name__)
 app.secret_key = 'secret_key'
@@ -219,7 +219,7 @@ def upload_liste_impaye():
 
         orig_filename = secure_filename(f.filename)
         ext = ('.' + orig_filename.rsplit('.', 1)[-1]).lower() if '.' in orig_filename else ''
-        if ext not in ('xlsx', 'xls', 'csv'):
+        if ext not in ('.xlsx', '.xls', '.csv'):
             flash("Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV.", "warning")
             return _no_store(_see_other('upload_liste_impaye', t=int(time())))
 
@@ -258,8 +258,8 @@ def upload_liste_impaye():
 
             # 5) Sauvegarde normalisée en .xlsx (toujours) pour cohérence de lecture ultérieure
             save_path: Path = _impaye_path_for_sector(secteur)
-            if save_path.suffix.lower() not in ('xlsx', 'xls'):
-                save_path = save_path.with_suffix('xlsx')
+            if save_path.suffix.lower() not in ('.xlsx', '.xls'):
+                save_path = save_path.with_suffix('.xlsx')
             save_path.parent.mkdir(parents=True, exist_ok=True)
 
             # openpyxl recommandé pour .xlsx
@@ -328,7 +328,7 @@ def upload_liste_payement():
 
         filename = secure_filename(file.filename or "")
         ext = Path(filename).suffix.lower()
-        if ext not in ('xlsx', 'xls', 'csv'):
+        if ext not in ('.xlsx', '.xls', '.csv'):
             flash("Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV (.csv).", "info")
             return render_template('upload_liste_payement.html',
                                    data_preview_html=None, uploaded_names=None,
@@ -338,7 +338,7 @@ def upload_liste_payement():
             raw = file.read()
 
             # --- Lecture tolérante + détection d'entête (identique à l'esprit original) ---
-            if ext in ('xlsx', 'xls'):
+            if ext in ('.xlsx', '.xls'):
                 df0 = pd.read_excel(BytesIO(raw), sheet_name=0, header=None, dtype=object)
                 header_row = None
                 for i in range(min(len(df0), 30)):
