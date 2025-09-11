@@ -16,17 +16,6 @@
             <h1 class="h4 mb-0">Insertion du fichier des impayés</h1>
           </div>
 
-          <!-- Messages flash (avec catégories) -->
-          {% with messages = get_flashed_messages(with_categories=True) %}
-            {% if messages %}
-              {% for category, message in messages %}
-                <div class="alert alert-{{ 'info' if category=='message' else category }} mb-2" role="alert">
-                  {{ message }}
-                </div>
-              {% endfor %}
-            {% endif %}
-          {% endwith %}
-
           <!-- Formulaire upload -->
           <form action="{{ url_for('upload_liste_impaye') }}"
                 method="POST"

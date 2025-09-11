@@ -25,6 +25,9 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from zoneinfo import ZoneInfo
 from time import time
+from werkzeug.exceptions import RequestEntityTooLarge
+from tempfile import NamedTemporaryFile
+import shutil
 
 # -------------------------------------------------------
 # Config
@@ -152,11 +155,11 @@ def _list_secteurs() -> list:
 
 
 SECTEURS_FIXES = [
-    "Adjamé -Nord v", "Adjamé - Sud", "Bingerville",
+    "Adjamé -Nord", "Adjamé - Sud", "Bingerville",
     "2 Plateaux", "Cocody", "Djibi"
 ]
 SECT_ABBR = {
-    'Adjamé -Nord v': 'Adj-N',
+    'Adjamé -Nord': 'Adj-N',
     'Adjamé - Sud':   'Adj-S',
     'Bingerville':    'Bing.',
     '2 Plateaux':     '2P',
@@ -177,7 +180,7 @@ def home():
     if not _active_secteur():
         return redirect(url_for('choisir_secteur'))
   
-    return redirect(url_for('retablissements'))
+    return redirect(url_for('upload_liste_impaye'))
 
 @app.route('/secteurs', methods=['GET'])
 def choisir_secteur():
@@ -193,7 +196,7 @@ def set_secteur():
         return redirect(url_for('choisir_secteur'))
     session['secteur'] = s
     flash(f"Secteur sélectionné : {s}", "success")
-    return redirect(url_for('retablissements'))
+    return redirect(url_for('upload_liste_impaye'))
 
 
 def find_header_row(df0, required_labels=None, min_match=3):
@@ -211,20 +214,23 @@ def find_header_row(df0, required_labels=None, min_match=3):
     return int(non_na_counts.idxmax())
 
 
+@app.errorhandler(RequestEntityTooLarge)
+def file_too_large(e):
+    flash("Fichier trop volumineux (au-delà de la limite configurée).", "danger")
+    return redirect(url_for('upload_liste_impaye'))
 
 @app.route('/upload_liste_impaye', methods=['GET', 'POST'])
 @_require_secteur
 def upload_liste_impaye():
-    """Upload/parse/sauvegarde d’un fichier impayés (xls/xlsx/csv) + aperçu."""
     secteur = _active_secteur()
+    preview_html = None
+    orig_filename = request.args.get('orig')
 
     if request.method == 'POST':
-        # 1) Récup fichier
-        app.logger.info(
-            "CT=%s files_keys=%s",
-            request.headers.get('Content-Type'),
-            list(request.files.keys())
-        )
+        app.logger.info("=== UPLOAD START ===")
+        app.logger.info("Headers Content-Type: %s", request.headers.get('Content-Type'))
+        app.logger.info("FILES keys: %s", list(request.files.keys()))
+        app.logger.info("FORM keys: %s", list(request.form.keys()))
 
         f = request.files.get('file')
         if not f:
@@ -233,29 +239,32 @@ def upload_liste_impaye():
 
         if not f or not getattr(f, 'filename', ''):
             flash("Veuillez choisir un fichier (.xlsx, .xls ou .csv).", "warning")
-            return _no_store(_see_other('upload_liste_impaye', t=int(time())))
+            return _no_store(_see_other('upload_liste_impaye', t=int(time.time())))
 
         orig_filename = secure_filename(f.filename)
         ext = ('.' + orig_filename.rsplit('.', 1)[-1]).lower() if '.' in orig_filename else ''
         if ext not in ('.xlsx', '.xls', '.csv'):
-            flash("Format non supporté. Choisissez un fichier Excel (.xlsx/.xls) ou CSV.", "warning")
-            return _no_store(_see_other('upload_liste_impaye', t=int(time())))
+            flash("Format non supporté.", "warning")
+            return _no_store(_see_other('upload_liste_impaye', t=int(time.time())))
 
         try:
-            # 2) Lire dans un buffer mémoire
-            raw = f.read()
-            bio = BytesIO(raw)
+            # Sauvegarde d’abord dans un fichier temporaire
+            with NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                tmp_name = tmp.name
+                f.stream.seek(0)
+                shutil.copyfileobj(f.stream, tmp)
+            app.logger.info("Upload sauvegardé dans le tmp: %s", tmp_name)
 
-            # Lecture tolérante sans présumer d’entêtes
+            # Lecture du fichier via pandas
             if ext == '.csv':
-                df0 = pd.read_csv(bio, header=None, dtype=object)
-            elif ext == '.xlsx':
-                df0 = pd.read_excel(bio, sheet_name=0, header=None, dtype=object, engine='openpyxl')
-            else:  # '.xls'
-                df0 = pd.read_excel(bio, sheet_name=0, header=None, dtype=object, engine='xlrd')
+                df0 = pd.read_csv(tmp_name, header=None, dtype=object)
+            elif ext in ('.xlsx', '.xls'):
+                try:
+                    df0 = pd.read_excel(tmp_name, sheet_name=0, header=None, dtype=object, engine='openpyxl')
+                except Exception:
+                    df0 = pd.read_excel(tmp_name, sheet_name=0, header=None, dtype=object)
 
-
-            # 3) Détection de la ligne d’entête
+            # Trouver ligne d’en-tête
             required = ['Matricule AZ', 'Nom AZ', 'Tournee', 'Genre client']
             header_row = find_header_row(df0, required_labels=required, min_match=3)
 
@@ -263,12 +272,13 @@ def upload_liste_impaye():
             df = df0.iloc[header_row + 1:].copy()
             df.columns = header
 
-            # 4) Nettoyage colonnes/vides/doublons
+            # Nettoyage colonnes
             df = df.replace(r'^\s*$', pd.NA, regex=True)
-            # supprime colonnes sans nom / Unnamed
             colnames = list(df.columns)
-            mask_bad = np.array([(c is None) or (str(c).strip() == "") or str(c).lower().startswith("unnamed")
-                                 for c in colnames], dtype=bool)
+            mask_bad = np.array([
+                (c is None) or (str(c).strip() == "") or str(c).lower().startswith("unnamed")
+                for c in colnames
+            ], dtype=bool)
             if mask_bad.any():
                 df = df.iloc[:, ~mask_bad]
 
@@ -276,30 +286,30 @@ def upload_liste_impaye():
             df.columns = [str(c).strip() for c in df.columns]
             df = df.loc[:, ~pd.Index(df.columns).duplicated()]
 
-            # 5) Sauvegarde normalisée en .xlsx (toujours) pour cohérence de lecture ultérieure
+            # Sauvegarde finale normalisée
             save_path: Path = _impaye_path_for_sector(secteur)
             if save_path.suffix.lower() not in ('.xlsx', '.xls'):
                 save_path = save_path.with_suffix('.xlsx')
             save_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # openpyxl recommandé pour .xlsx
             try:
                 df.to_excel(save_path, index=False, engine='openpyxl')
             except TypeError:
-                # fallback si la signature engine= n’est pas supportée
                 df.to_excel(save_path, index=False)
 
-            flash(f"Fichier d’impayés « {orig_filename} » enregistré pour le secteur « {secteur} ».", "success")
-            # Redirige en GET pour afficher l’aperçu + nom du fichier
-            return _no_store(_see_other('upload_liste_impaye', t=int(time()), orig=orig_filename))
+            flash(f"Fichier d’impayés « {orig_filename} » enregistré pour le secteur « {secteur} ».", "info")
+            return _no_store(_see_other('upload_liste_impaye', t=int(time.time()), orig=orig_filename))
 
         except Exception as e:
+            app.logger.exception("Erreur durant upload/processing")
             flash(f"Erreur lors du traitement du fichier : {e}", "danger")
-            return _no_store(_see_other('upload_liste_impaye', t=int(time())))
-
-    # ----------- GET : affichage page + aperçu si fichier déjà enregistré ----------
-    preview_html = None
-    orig_filename = request.args.get('orig')
+            return _no_store(_see_other('upload_liste_impaye', t=int(time()), orig=orig_filename))
+        finally:
+            try:
+                if tmp_name and os.path.exists(tmp_name):
+                    os.remove(tmp_name)  
+            except Exception:
+                pass
 
     try:
         save_path: Path = _impaye_path_for_sector(secteur)
@@ -307,8 +317,11 @@ def upload_liste_impaye():
             if save_path.suffix.lower() == '.csv':
                 df = pd.read_csv(save_path, dtype=object)
             else:
-                xls = pd.ExcelFile(save_path)
-                df = xls.parse(xls.sheet_names[0], dtype=object) if xls.sheet_names else pd.DataFrame()
+                try:
+                    xls = pd.ExcelFile(save_path)
+                    df = xls.parse(xls.sheet_names[0], dtype=object) if xls.sheet_names else pd.DataFrame()
+                except Exception:
+                    df = pd.read_excel(save_path, dtype=object)
 
             if not df.empty:
                 df_preview = df.iloc[:10, :5].fillna("")
@@ -318,7 +331,8 @@ def upload_liste_impaye():
                 )
                 if not orig_filename:
                     orig_filename = save_path.name
-    except Exception:
+    except Exception as e:
+        app.logger.exception("Erreur lors de la lecture du fichier impayés existant")
         preview_html = None
 
     resp = make_response(render_template(
@@ -330,11 +344,10 @@ def upload_liste_impaye():
 
 
 
+
 @app.route('/upload_liste_payement', methods=['GET','POST'])
 def upload_liste_payement():
-    """Fichiers de paiements partagés (communs à tous les secteurs).
-       LOGIQUE CONSERVÉE : pas de PRG, pas de renommage, on sauvegarde sous le nom reçu.
-    """
+
     data_preview_html, uploaded_names = None, []
     added_rows, duplicates_removed = 0, 0
 
@@ -357,7 +370,7 @@ def upload_liste_payement():
             required = {'RefContrat','DateCreation','DateReglement','Secteurs'}
             raw = file.read()
 
-            # --- Lecture tolérante + détection d'entête (identique à l'esprit original) ---
+            
             if ext in ('.xlsx', '.xls'):
                 df0 = pd.read_excel(BytesIO(raw), sheet_name=0, header=None, dtype=object)
                 header_row = None
@@ -403,18 +416,18 @@ def upload_liste_payement():
                     df = pd.read_csv(StringIO(text), dtype=str, keep_default_na=False, sep=sep, engine='python')
                 saver = ('csv', sep, enc_used)
 
-            # --- Normalisation légère (trim colonnes + cellules, comme avant) ---
+           
             df.rename(columns=lambda c: str(c).strip(), inplace=True)
             for col in required:
                 if col in df.columns: df[col] = df[col].astype(str)
             df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
 
-            # --- Aperçu (10 x 15) ---
+         
             preview_df = df.iloc[:10, :15].copy()
             data_preview_html = preview_df.to_html(classes='table table-sm table-striped',
                                                    index=False, border=0)
 
-            # --- Sauvegarde DISQUE (même nom — donc écrasement possible si déjà présent) ---
+           
             payment_folder = app.config.get('PAYMENT_FOLDER')
             if not payment_folder:
                 raise RuntimeError("CONFIG: PAYMENT_FOLDER manquant dans app.config.")
@@ -430,7 +443,7 @@ def upload_liste_payement():
 
             uploaded_names = [filename]
             added_rows = len(df)
-            flash(f"Fichier de paiements enregistré ({filename}, {added_rows} lignes).", "success")
+            flash(f"Fichier de paiements enregistré ({filename}, {added_rows} lignes).", "info")
 
         except Exception as e:
             flash(f'Erreur lors du traitement : {e}', "danger")
@@ -549,7 +562,7 @@ def _compute_retablissemements(app):
     out = out_all[out_all['Reste'].fillna(1) <= 0].copy()
     nb_eligibles_total = len(out)
 
-    # stats (dans ce mode, une seule zone = secteur actif)
+
     eligibles_by_zone = {secteur: nb_eligibles_total}
 
     stats = {
